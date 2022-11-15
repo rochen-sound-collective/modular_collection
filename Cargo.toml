@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "xtask",
+    "collection/patterns"
+]
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"
+
