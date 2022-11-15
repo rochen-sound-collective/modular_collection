@@ -19,6 +19,10 @@ with 1/4 notes or another with syncopes playing over the same chord progression.
 line playing over different
 chords.
 
+https://user-images.githubusercontent.com/8309189/202025239-341cc922-15e1-4641-9017-a8ac9645a7ea.mp4
+
+
+
 ## Getting started
 
 **Fig. 1: Chord track with four two-note chords in a loop.**
