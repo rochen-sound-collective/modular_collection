@@ -58,7 +58,7 @@ impl ChordPatternProcessor {
         process_note_event(e)
     } */
 
-    fn apply_pattern_changes(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32, wrap_threshold: u8) {
+    fn apply_pattern_changes(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32, wrap_threshold: u8, octave_range: u8) {
         // released keys
         while let Some(note_event) = self.released_pattern_keys.pop_back() {
             let raw_note = get_note_of_event(&note_event).unwrap();
@@ -71,7 +71,7 @@ impl ChordPatternProcessor {
 
         // changes in chord
         for (idx, e) in self.held_pattern_keys.iter_mut() {
-            let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), *idx, wrap_threshold);
+            let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), *idx, wrap_threshold, octave_range);
             if e.chord_data != chord_data { // chord changed
                 // release notes if triggered
                 if let Some(modulated_event) = e.note_off(timing) {
@@ -90,7 +90,7 @@ impl ChordPatternProcessor {
         // pressed keys
         while let Some(note_event) = self.pressed_pattern_keys.pop_back() {
             let raw_note = get_note_of_event(&note_event).unwrap();
-            let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), raw_note, wrap_threshold);
+            let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), raw_note, wrap_threshold, octave_range);
 
             let active_note = PatternData {
                 chord_data: chord_data,
@@ -106,8 +106,8 @@ impl ChordPatternProcessor {
 
     //----------------------------
 
-    pub fn end_cycle(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32, wrap_threshold: u8) {
-        self.apply_pattern_changes(send_events, timing, wrap_threshold);
+    pub fn end_cycle(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32, wrap_threshold: u8, octave_range: u8) {
+        self.apply_pattern_changes(send_events, timing, wrap_threshold, octave_range);
     }
 
     //----------------------------

@@ -13,7 +13,7 @@ pub fn note_to_chord_idx_octave(note: u8, wrap_threshold: u8) -> (u8, i8) {
     )
 }
 
-pub fn get_chord_data(chord_vec: &Vec<u8>, note_value: u8, wrap_threshold: u8) -> PatternChordData {
+pub fn get_chord_data(chord_vec: &Vec<u8>, note_value: u8, wrap_threshold: u8, octave_range: u8) -> PatternChordData {
     let (chord_idx, octave) = utils::note_to_chord_idx_octave(note_value, wrap_threshold);
 
     //let chord_vec: Vec<u8> = self.chord.iter().cloned().collect();
@@ -25,7 +25,7 @@ pub fn get_chord_data(chord_vec: &Vec<u8>, note_value: u8, wrap_threshold: u8) -
     };
 
     if let Some(note) = chord_vec.get(chord_idx as usize) {
-        chord_data.triggered_note = Some((*note as i8 + 12 * octave) as u8);
+        chord_data.triggered_note = Some((*note as i8 + octave_range as i8 * octave) as u8);
     };
 
     chord_data

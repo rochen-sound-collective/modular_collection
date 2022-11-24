@@ -27,18 +27,22 @@ struct PatternsParams {
 
     #[id = "auto_threshold"]
     auto_threshold: BoolParam,
+
+    #[id = "octave_range"]
+    octave_range: IntParam,
 }
 
 impl Default for PatternsParams {
     fn default() -> Self {
         Self {
-            chord_channel: IntParam::new("chord_channel", 16, IntRange::Linear { min: 1, max: 16 }),
+            chord_channel: IntParam::new("Chord Channel", 16, IntRange::Linear { min: 1, max: 16 }),
             wrap_threshold: IntParam::new(
-                "wrap_threshold",
+                "Wrap Threshold",
                 12,
                 IntRange::Linear { min: 1, max: 12 },
             ),
-            auto_threshold: BoolParam::new("auto_threshold", true),
+            auto_threshold: BoolParam::new("Auto Threshold", true),
+            octave_range: IntParam::new("Octave Range", 12, IntRange::Linear { min: 1, max: 127 }),
         }
     }
 }
@@ -137,7 +141,7 @@ impl Plugin for Patterns {
             while let Some(event) = next_event {
                 if event.timing() != sample_id {
                     let note_events = &mut vec![];
-                    self.processor.end_cycle(note_events, sample_id, self.get_threshold());
+                    self.processor.end_cycle(note_events, sample_id, self.get_threshold(), self.params.octave_range.value() as u8);
 
                     for e in note_events {
                         context.send_event(*e);
@@ -169,7 +173,7 @@ impl Plugin for Patterns {
             // does not change after the last note.
 
             let note_events = &mut vec![];
-            self.processor.end_cycle(note_events, sample_id, self.get_threshold());
+            self.processor.end_cycle(note_events, sample_id, self.get_threshold(), self.params.octave_range.value() as u8);
 
             for e in note_events {
                 context.send_event(*e);
