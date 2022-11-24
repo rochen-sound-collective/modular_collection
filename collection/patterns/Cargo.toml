@@ -3,8 +3,11 @@ name = "modular_patterns"
 version = "0.1.0"
 edition = "2021"
 authors = ["JRS<mail@example.com>"]
-description = ""
-license = ""
+description = """Modular::Patterns is a MIDI arpeggiator that combines a chord channel with a pattern. It's main
+difference to other plugins (I know of) it uses midi input for both chords and patterns. This makes it possible to use
+the UI of your DAW to edit you MIDI clips and tracks. Modular::Patterns is an audio plugin and is released in VST-3 or
+Clap format."""
+license = "GPLv3"
 
 [lib]
 crate-type = ["cdylib"]
