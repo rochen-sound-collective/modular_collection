@@ -1,5 +1,4 @@
-<img src="img/modular-collection-logo.png" alt="Modular Logo" width="200" height="200"/>
-<img src="img/rochen_sound_collective_logo_512.svg" alt="Rochen Sound Collective Logo" width="200" height="200"/>
+<img src="img/modular-collection-logo.png" alt="Modular Logo" width="200" height="200"/><img src="img/rochen_sound_collective_logo_512.svg" alt="Rochen Sound Collective Logo" width="200" height="200"/>
 
 # Modular::Collection
 
@@ -7,7 +6,9 @@ Modular::Collection is a collection of open source audio plugins in development.
 
 ## Plugins
 
-Right now there is only [Modular::Patterns](collection/patterns/README.md). Hopefully other plugins will follow.
+> :warning: Not much to see here. Right now there is only Modular::Patterns. 
+> 
+> You probably want to go [here](collection/patterns/README.md)
 
 ### Modular::Patterns
 ___

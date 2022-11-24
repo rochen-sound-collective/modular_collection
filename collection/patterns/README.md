@@ -1,5 +1,4 @@
-<img src="../../img/modular-patterns-logo.png" alt="Modular::Patterns Logo" width="200" height="200"/>
-<img src="../../img/rochen_sound_collective_logo_512.svg" alt="Rochen Sound Collective Logo" width="200" height="200"/>
+<img src="../../img/modular-patterns-logo.png" alt="Modular::Patterns Logo" width="200" height="200"/><img src="../../img/rochen_sound_collective_logo_512.svg" alt="Rochen Sound Collective Logo" width="200" height="200"/>
 
 # Modular::Patterns
 
@@ -19,6 +18,10 @@ you want. This way the chord progression can be separated from the playing style
 with 1/4 notes or another with syncopes playing over the same chord progression. Likewise, you can have the same bass 
 line playing over different
 chords.
+
+https://user-images.githubusercontent.com/8309189/202025239-341cc922-15e1-4641-9017-a8ac9645a7ea.mp4
+
+
 
 ## Getting started
 
@@ -48,7 +51,7 @@ In the next step you now need to route the chord track into every pattern track.
 the track (followed by an instrument plugin to make it audible). If you chose MIDI channel 16 you are good to go, 
 otherwise see the [Parameters section](#parameters).
 
-> :hint: Depending on the DAW the approach of routing midi is very different or not possible at all. In Bitwig this can 
+> ⚠️ Depending on the DAW the approach of routing midi is very different or not possible at all. In Bitwig this can 
 > be done with a note receiver device. You need select the chord track and make sure the mute options are toggled off.
 > I'm hoping I can somehow improve the situation in the future. If you know of any way, please open a ticket.
  
@@ -87,23 +90,30 @@ Default: **true**
 You can use any kind of input source from clips to tracks or even play live
 with a MIDI controller. From there on you can start being creative. 
 
+### Trying unconventional things
+
+Be experimental with MIDI clips. Remember there are no wrong notes because Modular::Patterns
+makes sure that only variants of your input chord are used. You can for example use a drum track and maybe make it 
+slower a couple of times (just like in Fig. 4) and see how that sounds. You probably also need to transpose it to 
+keep it in range of the root note C3, otherwise you might end up with too high or too low notes. 
+
+### Create a virtual band 
+
+Add an empty chord track. Continue by creating several pattern tracks with different patterns choosing the instruments of your likings.
+Now generate different chord progressions and see how they sound using the same patterns.
+
 ### Midi zones for playing patterns and chords live
+
 You could split your MIDI keyboard into different 
 zones. If you assign the chords to the chords channel you can play both chords and pattern (with one hand each) at the 
 same time.
 
+### Optimize recorded chord tracks
 
-
-> :hint: Be experimental with MIDI clips. Remember there are no wrong notes because Modular::Patterns
-> makes sure that only variants of your input chord are used. You can for example use a drum track and maybe make it 
-> slower a couple of times (just like in Fig. 4) and see how that sounds. You probably also need to transpose it to 
-> keep it in range of the root note C3, otherwise you might end up with too high or too low notes. 
-
-> :hint: In case you record the chord track from a MIDI controller consider quantizing it and make sure there are no 
-> gaps if you do not want the notes from the pattern track to be clipped. The pattern track does not have to be straight
-> on timing. Just keep in mind that if a note is played before a chord change it is triggered for the old chord and 
-> released just after that and then retriggered for the new chord. 
-> 
+In case you record the chord track from a MIDI controller consider quantizing it and make sure there are no 
+gaps if you do not want the notes from the pattern track to be clipped. The pattern track does not have to be straight
+on timing. Just keep in mind that if a note is played before a chord change it is triggered for the old chord and 
+released just after that and then retriggered for the new chord. 
 
 ## Installation
 
