@@ -176,12 +176,14 @@ impl Plugin for Patterns {
             }
             // TODO: Modulate other events too
             for note_event in other_events.iter() {
-                let raw_note = get_note_of_event(&note_event).unwrap();
-                let chord_data = get_chord_data(&self.processor.chord.iter().cloned().collect(), raw_note, self.get_threshold());
-                if let Some(triggered_note) = chord_data.triggered_note {
-                    context.send_event(set_note_of_event(note_event, triggered_note));
+                if let Some(raw_note) = get_note_of_event(&note_event) {
+                    let chord_data = get_chord_data(&self.processor.chord.iter().cloned().collect(), raw_note, self.get_threshold(), self.params.octave_range.value() as u8);
+                    if let Some(triggered_note) = chord_data.triggered_note {
+                        context.send_event(set_note_of_event(note_event, triggered_note));
+                    }
                 }
             }
+
             other_events.clear();
 
         }
@@ -202,7 +204,6 @@ impl ClapPlugin for Patterns {
 impl Vst3Plugin for Patterns {
     const VST3_CLASS_ID: [u8; 16] = *b"modular.patterns";
     const VST3_CATEGORIES: &'static str = "Instrument|Tools";
-
 }
 
 nih_export_clap!(Patterns);
