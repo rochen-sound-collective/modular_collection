@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
 use crate::utils::{get_note_of_event, set_note_of_event, get_chord_data};
 
-struct Patterns {
+pub struct Patterns {
     params: Arc<PatternsParams>,
     processor: ChordPatternProcessor,
 }
