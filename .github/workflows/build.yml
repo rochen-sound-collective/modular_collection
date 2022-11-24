@@ -1,3 +1,4 @@
+# Based on (with minor modifications): https://github.com/robbert-vdh/nih-plug/tree/master/.github/workflows
 name: Automated Builds
 
 on:
@@ -95,7 +96,7 @@ jobs:
 
       - name: Determine build archive name
         run: |
-          echo "ARCHIVE_NAME=nih-plugs-$(git describe --always)-${{ matrix.name }}" >> "$GITHUB_ENV"
+          echo "ARCHIVE_NAME=modular-collection-$(git describe --always)-${{ matrix.name }}" >> "$GITHUB_ENV"
       - name: Move all packaged plugin into a directory
         run: |
           # GitHub Action strips the top level directory, great, have another one
