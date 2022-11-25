@@ -10,6 +10,10 @@ your DAW to edit you MIDI clips and tracks. Modular::Patterns is an audio plugin
 > This is because I haven't tested many other DAW's yet! Ableton Live is unfortunately incompatible so far. For details 
 > please refer to [DAW Compatibility](#daw-compatibility).
 
+## TLDR
+
+You can download the plugin here: https://github.com/rochen-sound-collective/modular_collection/releases
+
 ## How does it work?
 
 It kind of detaches the chords from the rhythm similar to playing a guitar. The one hand on the fretboard is holding
@@ -118,7 +122,7 @@ released just after that and then retriggered for the new chord.
 ## Installation
 
 There is nothing special about installing Modular::Patterns. It is done like with any other plugin.
-Please download the latest version from the releases page on GitHub and copy it to the Plugins folder. The correct 
+Please download the latest version from the [releases](https://github.com/rochen-sound-collective/modular_collection/releases) page on GitHub and copy it to the Plugins folder. The correct 
 location of that folder depends on your DAW. 
 
 > Typical folders are:
