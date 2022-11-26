@@ -241,7 +241,7 @@ mod tests {
         });
 
         let send_events = &mut vec![];
-        processor.end_cycle(send_events, 0, 3);
+        processor.end_cycle(send_events, 0, 3, 12);
 
         assert_eq!(*send_events, [
             NoteOn {
@@ -269,7 +269,7 @@ mod tests {
         });
 
         let send_events = &mut vec![];
-        processor.end_cycle(send_events, 1, 3);
+        processor.end_cycle(send_events, 1, 3, 12);
 
         assert_eq!(*send_events, [
             NoteOff {
