@@ -139,28 +139,28 @@ mod tests {
         let chord = vec![72, 74, 76];
 
         // positive octave
-        let data = get_chord_data(&chord, 60, 3);
+        let data = get_chord_data(&chord, 60, 3, 12);
         assert_eq!(PatternChordData {
             octave: 0,
             chord_idx: 0,
             triggered_note: Some(72),
         }, data);
 
-        let data = get_chord_data(&chord, 61, 3);
+        let data = get_chord_data(&chord, 61, 3, 12);
         assert_eq!(PatternChordData {
             octave: 0,
             chord_idx: 1,
             triggered_note: Some(74),
         }, data);
 
-        let data = get_chord_data(&chord, 62, 3);
+        let data = get_chord_data(&chord, 62, 3, 12);
         assert_eq!(PatternChordData {
             octave: 0,
             chord_idx: 2,
             triggered_note: Some(76),
         }, data);
 
-        let data = get_chord_data(&chord, 63, 3);
+        let data = get_chord_data(&chord, 63, 3, 12);
         assert_eq!(PatternChordData {
             octave: 1,
             chord_idx: 0,
@@ -168,7 +168,7 @@ mod tests {
         }, data);
 
         // invalid chord idx -> no note triggered
-        let data = get_chord_data(&chord, 63, 4);
+        let data = get_chord_data(&chord, 63, 4, 12);
         assert_eq!(PatternChordData {
             octave: 0,
             chord_idx: 3,
@@ -176,25 +176,47 @@ mod tests {
         }, data);
 
         // negative octave
-        let data = get_chord_data(&chord, 59, 3);
+        let data = get_chord_data(&chord, 59, 3, 12);
         assert_eq!(PatternChordData {
             octave: -1,
             chord_idx: 2,
             triggered_note: Some(64),
         }, data);
 
-        let data = get_chord_data(&chord, 58, 3);
+        let data = get_chord_data(&chord, 58, 3, 12);
         assert_eq!(PatternChordData {
             octave: -1,
             chord_idx: 1,
             triggered_note: Some(62),
         }, data);
 
-        let data = get_chord_data(&chord, 57, 3);
+        let data = get_chord_data(&chord, 57, 3, 12);
         assert_eq!(PatternChordData {
             octave: -1,
             chord_idx: 0,
             triggered_note: Some(60),
+        }, data);
+
+        // octave range
+        let data = get_chord_data(&chord, 61, 1, 24);
+        assert_eq!(PatternChordData {
+            octave: 1,
+            chord_idx: 0,
+            triggered_note: Some(96),
+        }, data);
+
+        let data = get_chord_data(&chord, 61, 1, 6);
+        assert_eq!(PatternChordData {
+            octave: 1,
+            chord_idx: 0,
+            triggered_note: Some(78),
+        }, data);
+
+        let data = get_chord_data(&chord, 61, 1, 1);
+        assert_eq!(PatternChordData {
+            octave: 1,
+            chord_idx: 0,
+            triggered_note: Some(73),
         }, data);
     }
 }

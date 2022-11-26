@@ -213,6 +213,7 @@ impl Vst3Plugin for Patterns {
 nih_export_clap!(Patterns);
 nih_export_vst3!(Patterns);
 
+/*
 #[cfg(test)]
 mod tests {
     #[test]
@@ -221,3 +222,4 @@ mod tests {
         assert_eq!(result, 4);
     }
 }
+*/
