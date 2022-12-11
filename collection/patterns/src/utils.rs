@@ -13,6 +13,29 @@ pub fn note_to_chord_idx_octave(note: u8, wrap_threshold: u8) -> (u8, i8) {
     )
 }
 
+fn count_black_keys(note: u8) -> u8 {
+    // Calculate the number of octaves between the lowest and the highest note
+    let octaves = ((note) / 12) as u8;
+    // Return the number of black keys in the octaves
+    return (octaves * 5 + [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 5][(note.rem_euclid(12)) as usize]) as u8;
+}
+
+fn count_black_keys_from_C3(note: u8) -> i32 {
+  // there are 25 black keys from C0 (0) to C3 (60)
+  count_black_keys(note) as i32 - 25
+}
+
+fn is_black_key(note: u8) -> bool {
+    match note % 12 {
+        1 => true,  // C# / Db
+        3 => true,  // D# / Eb
+        6 => true,  // F# / Gb
+        8 => true,  // G# / Ab
+        10 => true, // A# / Bb
+        _ => false,
+    }
+}
+
 pub fn get_chord_data(chord_vec: &Vec<u8>, note_value: u8, wrap_threshold: u8, octave_range: u8) -> PatternChordData {
     let (chord_idx, octave) = utils::note_to_chord_idx_octave(note_value, wrap_threshold);
 
@@ -108,9 +131,49 @@ pub fn get_voice_id_of_event(note_event: &NoteEvent) -> Option<i32> { // Check i
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::{get_channel_of_event, get_chord_data, note_to_chord_idx_octave};
+    use crate::utils::{get_channel_of_event, get_chord_data, note_to_chord_idx_octave, is_black_key,
+                       count_black_keys_from_C3};
     use nih_plug::midi::NoteEvent;
     use crate::processors::PatternChordData;
+    
+    #[test]
+    fn test_is_black_key() {
+        // Test the is_black_key function with some example MIDI note numbers.
+        let black_keys = [1, 3, 6, 8, 10];
+        for note in black_keys {
+            println!("{}: {}", note, is_black_key(note));
+        }
+    }
+    
+    #[test]
+    fn test_count_black_keys() {
+        assert_eq!(count_black_keys_from_C3(50), -4);
+        assert_eq!(count_black_keys_from_C3(51), -3);
+        assert_eq!(count_black_keys_from_C3(52), -3);
+        assert_eq!(count_black_keys_from_C3(53), -2);
+        assert_eq!(count_black_keys_from_C3(54), -2);
+        assert_eq!(count_black_keys_from_C3(55), -1);
+        assert_eq!(count_black_keys_from_C3(56), -1);
+        assert_eq!(count_black_keys_from_C3(57), 0);
+        assert_eq!(count_black_keys_from_C3(58), 0);
+        assert_eq!(count_black_keys_from_C3(59), 0);
+        assert_eq!(count_black_keys_from_C3(60), 0);
+        assert_eq!(count_black_keys_from_C3(61), 1);
+        assert_eq!(count_black_keys_from_C3(62), 1);
+        assert_eq!(count_black_keys_from_C3(63), 2);
+        assert_eq!(count_black_keys_from_C3(64), 2);
+        assert_eq!(count_black_keys_from_C3(65), 3);
+        assert_eq!(count_black_keys_from_C3(66), 3);
+        assert_eq!(count_black_keys_from_C3(67), 4);
+        assert_eq!(count_black_keys_from_C3(68), 4);
+        assert_eq!(count_black_keys_from_C3(69), 5);
+        assert_eq!(count_black_keys_from_C3(70), 5);
+        assert_eq!(count_black_keys_from_C3(71), 5);
+        assert_eq!(count_black_keys_from_C3(72), 5);
+        assert_eq!(count_black_keys_from_C3(73), 6);
+        assert_eq!(count_black_keys_from_C3(74), 6);
+        assert_eq!(count_black_keys_from_C3(75), 7);
+    }    
 
     #[test]
     fn test_get_channel_of_event() {
@@ -139,28 +202,28 @@ mod tests {
         let chord = vec![72, 74, 76];
 
         // positive octave
-        let data = get_chord_data(&chord, 60, 3);
+        let data = get_chord_data(&chord, 60, 3, 12);
         assert_eq!(PatternChordData {
             octave: 0,
             chord_idx: 0,
             triggered_note: Some(72),
         }, data);
 
-        let data = get_chord_data(&chord, 61, 3);
+        let data = get_chord_data(&chord, 61, 3, 12);
         assert_eq!(PatternChordData {
             octave: 0,
             chord_idx: 1,
             triggered_note: Some(74),
         }, data);
 
-        let data = get_chord_data(&chord, 62, 3);
+        let data = get_chord_data(&chord, 62, 3, 12);
         assert_eq!(PatternChordData {
             octave: 0,
             chord_idx: 2,
             triggered_note: Some(76),
         }, data);
 
-        let data = get_chord_data(&chord, 63, 3);
+        let data = get_chord_data(&chord, 63, 3, 12);
         assert_eq!(PatternChordData {
             octave: 1,
             chord_idx: 0,
@@ -168,7 +231,7 @@ mod tests {
         }, data);
 
         // invalid chord idx -> no note triggered
-        let data = get_chord_data(&chord, 63, 4);
+        let data = get_chord_data(&chord, 63, 4, 12);
         assert_eq!(PatternChordData {
             octave: 0,
             chord_idx: 3,
@@ -176,25 +239,47 @@ mod tests {
         }, data);
 
         // negative octave
-        let data = get_chord_data(&chord, 59, 3);
+        let data = get_chord_data(&chord, 59, 3, 12);
         assert_eq!(PatternChordData {
             octave: -1,
             chord_idx: 2,
             triggered_note: Some(64),
         }, data);
 
-        let data = get_chord_data(&chord, 58, 3);
+        let data = get_chord_data(&chord, 58, 3, 12);
         assert_eq!(PatternChordData {
             octave: -1,
             chord_idx: 1,
             triggered_note: Some(62),
         }, data);
 
-        let data = get_chord_data(&chord, 57, 3);
+        let data = get_chord_data(&chord, 57, 3, 12);
         assert_eq!(PatternChordData {
             octave: -1,
             chord_idx: 0,
             triggered_note: Some(60),
+        }, data);
+
+        // octave range
+        let data = get_chord_data(&chord, 61, 1, 24);
+        assert_eq!(PatternChordData {
+            octave: 1,
+            chord_idx: 0,
+            triggered_note: Some(96),
+        }, data);
+
+        let data = get_chord_data(&chord, 61, 1, 6);
+        assert_eq!(PatternChordData {
+            octave: 1,
+            chord_idx: 0,
+            triggered_note: Some(78),
+        }, data);
+
+        let data = get_chord_data(&chord, 61, 1, 1);
+        assert_eq!(PatternChordData {
+            octave: 1,
+            chord_idx: 0,
+            triggered_note: Some(73),
         }, data);
     }
 }
