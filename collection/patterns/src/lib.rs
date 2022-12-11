@@ -1,16 +1,18 @@
 mod active_note;
 mod processors;
 mod utils;
+mod editor;
+mod note_viewer;
 
 use crate::processors::ChordPatternProcessor;
 use nih_plug::prelude::*;
-use std::any::Any;
-use std::cmp::max;
-use std::collections::{HashMap, HashSet};
-use std::mem::swap;
-use std::sync::{Arc, Mutex};
+use nih_plug_vizia::ViziaState;
 use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
+
+use std::cmp::max;
+use std::sync::{Arc};
 use crate::utils::{get_note_of_event, set_note_of_event, get_chord_data};
+
 
 pub struct Patterns {
     params: Arc<PatternsParams>,
@@ -19,6 +21,9 @@ pub struct Patterns {
 
 #[derive(Params)]
 struct PatternsParams {
+    #[persist = "editor-state"]
+    editor_state: Arc<ViziaState>,
+
     #[id = "chord_channel"]
     chord_channel: IntParam,
 
@@ -35,6 +40,7 @@ struct PatternsParams {
 impl Default for PatternsParams {
     fn default() -> Self {
         Self {
+            editor_state: editor::default_state(),
             chord_channel: IntParam::new("Chord Channel", 16, IntRange::Linear { min: 1, max: 16 }),
             wrap_threshold: IntParam::new(
                 "Wrap Threshold",
@@ -124,6 +130,13 @@ impl Plugin for Patterns {
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
+    }
+
+    fn editor(&self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        editor::create(
+            self.params.clone(),
+            self.params.editor_state.clone()
+        )
     }
 
     fn process(
