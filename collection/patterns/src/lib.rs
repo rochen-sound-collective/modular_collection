@@ -95,7 +95,7 @@ impl Patterns {
 impl Plugin for Patterns {
     const NAME: &'static str = "Modular::Patterns";
     const VENDOR: &'static str = "Rochen Sound Collective";
-    const URL: &'static str = "githuburl";
+    const URL: &'static str = "https://github.com/rochen-sound-collective/modular_collection";
     const EMAIL: &'static str = "info@example.com";
 
     const VERSION: &'static str = "0.0.1";
