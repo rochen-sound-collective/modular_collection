@@ -1,6 +1,15 @@
 use nih_plug::midi::NoteEvent;
 use crate::processors::PatternChordData;
 use crate::utils;
+use nih_plug::prelude::*;
+
+#[derive(Enum, PartialEq)]
+pub enum KeyboardMode {
+    AllKeys = 0,
+    IgnoreBlackKeys = 1,
+    //ShiftBlackKeysRight = 2, //Not implemented
+    //ShiftBlackKeysLeft = 3
+}
 
 pub fn note_to_chord_idx_octave(note: u8, wrap_threshold: u8) -> (u8, i8) {
     (
@@ -13,19 +22,19 @@ pub fn note_to_chord_idx_octave(note: u8, wrap_threshold: u8) -> (u8, i8) {
     )
 }
 
-fn count_black_keys(note: u8) -> u8 {
+pub fn count_black_keys(note: u8) -> u8 {
     // Calculate the number of octaves between the lowest and the highest note
     let octaves = ((note) / 12) as u8;
     // Return the number of black keys in the octaves
     return (octaves * 5 + [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 5][(note.rem_euclid(12)) as usize]) as u8;
 }
 
-fn count_black_keys_from_C3(note: u8) -> i32 {
+pub fn count_black_keys_from_C3(note: u8) -> i32 {
   // there are 25 black keys from C0 (0) to C3 (60)
   count_black_keys(note) as i32 - 25
 }
 
-fn is_black_key(note: u8) -> bool {
+pub fn is_black_key(note: u8) -> bool {
     match note % 12 {
         1 => true,  // C# / Db
         3 => true,  // D# / Eb
@@ -33,6 +42,17 @@ fn is_black_key(note: u8) -> bool {
         8 => true,  // G# / Ab
         10 => true, // A# / Bb
         _ => false,
+    }
+}
+
+pub fn raw_note_apply_keyboard_mode(raw_note: u8, keyboard_mode: &KeyboardMode)-> Option<u8> {
+    match keyboard_mode {
+        KeyboardMode::IgnoreBlackKeys =>
+          match is_black_key(raw_note) {
+              True=> None,
+              False => Some((raw_note as i32 - count_black_keys_from_C3(raw_note)) as u8)
+          }
+        KeyboardMode::AllKeys =>  Some(raw_note),
     }
 }
 

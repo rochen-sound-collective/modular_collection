@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
 use nih_plug::prelude::*;
 use crate::active_note::ActiveNoteDefaultData;
-use crate::utils::{get_note_of_event, get_chord_data};
+
+use crate::utils::{get_note_of_event, get_chord_data, KeyboardMode, count_black_keys_from_C3, is_black_key, raw_note_apply_keyboard_mode};
 
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Default)]
@@ -58,13 +59,16 @@ impl ChordPatternProcessor {
         process_note_event(e)
     } */
 
-    fn apply_pattern_changes(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32, wrap_threshold: u8, octave_range: u8) {
+    fn apply_pattern_changes(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32,
+                             wrap_threshold: u8, octave_range: u8, keyboard_mode: KeyboardMode) {
         // released keys
         while let Some(note_event) = self.released_pattern_keys.pop_back() {
-            let raw_note = get_note_of_event(&note_event).unwrap();
-            if let Some(active_note) = self.held_pattern_keys.remove(&raw_note) {
-                if let Some(modulated_event) = active_note.note_off(note_event.timing()) {
-                    send_events.push(modulated_event);
+            if let Some(raw_note) = raw_note_apply_keyboard_mode(
+                get_note_of_event(&note_event).unwrap(), &keyboard_mode){
+                if let Some(active_note) = self.held_pattern_keys.remove(&raw_note) {
+                    if let Some(modulated_event) = active_note.note_off(note_event.timing()) {
+                        send_events.push(modulated_event);
+                    }
                 }
             }
         }
@@ -88,26 +92,29 @@ impl ChordPatternProcessor {
         }
 
         // pressed keys
-        while let Some(note_event) = self.pressed_pattern_keys.pop_back() {
-            let raw_note = get_note_of_event(&note_event).unwrap();
-            let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), raw_note, wrap_threshold, octave_range);
+        while let Some(note_event) = self.released_pattern_keys.pop_back() {
+          if let Some(raw_note) = raw_note_apply_keyboard_mode(
+                get_note_of_event(&note_event).unwrap(), &keyboard_mode) {
+              let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), raw_note, wrap_threshold, octave_range);
 
-            let active_note = PatternData {
-                chord_data: chord_data,
-                note_data: ActiveNoteDefaultData::from_note_event(&note_event),
-            };
+              let active_note = PatternData {
+                  chord_data: chord_data,
+                  note_data: ActiveNoteDefaultData::from_note_event(&note_event),
+              };
 
-            if let Some(modulated_event) = active_note.note_on(note_event.timing()) {
-                send_events.push(modulated_event);
-            }
-            self.held_pattern_keys.insert(raw_note, active_note);
+              if let Some(modulated_event) = active_note.note_on(note_event.timing()) {
+                  send_events.push(modulated_event);
+              }
+              self.held_pattern_keys.insert(raw_note, active_note);
+          }
         }
     }
 
     //----------------------------
 
-    pub fn end_cycle(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32, wrap_threshold: u8, octave_range: u8) {
-        self.apply_pattern_changes(send_events, timing, wrap_threshold, octave_range);
+    pub fn end_cycle(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32, wrap_threshold: u8,
+                     octave_range: u8, keyboard_mode: KeyboardMode) {
+        self.apply_pattern_changes(send_events, timing, wrap_threshold, octave_range, keyboard_mode);
     }
 
     //----------------------------
@@ -151,6 +158,7 @@ mod tests {
     use nih_plug::midi::NoteEvent;
     use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
     use crate::processors::{PatternData, ChordPatternProcessor};
+    use crate::utils::KeyboardMode;
 
     #[test]
     fn test_process_chord_event() {
@@ -241,7 +249,7 @@ mod tests {
         });
 
         let send_events = &mut vec![];
-        processor.end_cycle(send_events, 0, 3, 12);
+        processor.end_cycle(send_events, 0, 3, 12, KeyboardMode::AllKeys);
 
         assert_eq!(*send_events, [
             NoteOn {
@@ -269,7 +277,7 @@ mod tests {
         });
 
         let send_events = &mut vec![];
-        processor.end_cycle(send_events, 1, 3, 12);
+        processor.end_cycle(send_events, 1, 3, 12, KeyboardMode::AllKeys);
 
         assert_eq!(*send_events, [
             NoteOff {

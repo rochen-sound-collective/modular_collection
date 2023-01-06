@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::mem::swap;
 use std::sync::{Arc, Mutex};
 use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
-use crate::utils::{get_note_of_event, set_note_of_event, get_chord_data};
+use crate::utils::{get_note_of_event, set_note_of_event, get_chord_data, KeyboardMode};
 
 pub struct Patterns {
     params: Arc<PatternsParams>,
@@ -30,6 +30,9 @@ struct PatternsParams {
 
     #[id = "octave_range"]
     octave_range: IntParam,
+
+    #[id = "key_mode"]
+    key_mode: EnumParam<KeyboardMode>,
 }
 
 impl Default for PatternsParams {
@@ -43,6 +46,7 @@ impl Default for PatternsParams {
             ),
             auto_threshold: BoolParam::new("Auto Threshold", true),
             octave_range: IntParam::new("Octave Range", 12, IntRange::Linear { min: 1, max: 127 }),
+            key_mode: EnumParam::new("Keyboard Mode", KeyboardMode::AllKeys),
         }
     }
 }
@@ -141,7 +145,7 @@ impl Plugin for Patterns {
             while let Some(event) = next_event {
                 if event.timing() != sample_id {
                     let note_events = &mut vec![];
-                    self.processor.end_cycle(note_events, sample_id, self.get_threshold(), self.params.octave_range.value() as u8);
+                    self.processor.end_cycle(note_events, sample_id, self.get_threshold(), self.params.octave_range.value() as u8, self.params.key_mode.value());
 
                     for e in note_events {
                         context.send_event(*e);
@@ -173,7 +177,7 @@ impl Plugin for Patterns {
             // does not change after the last note.
 
             let note_events = &mut vec![];
-            self.processor.end_cycle(note_events, sample_id, self.get_threshold(), self.params.octave_range.value() as u8);
+            self.processor.end_cycle(note_events, sample_id, self.get_threshold(), self.params.octave_range.value() as u8, self.params.key_mode.value());
 
             for e in note_events {
                 context.send_event(*e);
