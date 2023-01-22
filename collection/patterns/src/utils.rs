@@ -49,8 +49,8 @@ pub fn raw_note_apply_keyboard_mode(raw_note: u8, keyboard_mode: &KeyboardMode)-
     match keyboard_mode {
         KeyboardMode::IgnoreBlackKeys =>
           match is_black_key(raw_note) {
-              True=> None,
-              False => Some((raw_note as i32 - count_black_keys_from_C3(raw_note)) as u8)
+              true=> None,
+              false => u8::try_from(raw_note as i32 - count_black_keys_from_C3(raw_note)).ok()
           }
         KeyboardMode::AllKeys =>  Some(raw_note),
     }
@@ -68,7 +68,7 @@ pub fn get_chord_data(chord_vec: &Vec<u8>, note_value: u8, wrap_threshold: u8, o
     };
 
     if let Some(note) = chord_vec.get(chord_idx as usize) {
-        chord_data.triggered_note = Some((*note as i8 + octave_range as i8 * octave) as u8);
+        chord_data.triggered_note = u8::try_from(*note as i8 + octave_range as i8 * octave).ok();
     };
 
     chord_data
@@ -151,20 +151,10 @@ pub fn get_voice_id_of_event(note_event: &NoteEvent) -> Option<i32> { // Check i
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::{get_channel_of_event, get_chord_data, note_to_chord_idx_octave, is_black_key,
-                       count_black_keys_from_C3};
+    use crate::utils::{get_channel_of_event, get_chord_data, note_to_chord_idx_octave, is_black_key, count_black_keys_from_C3, raw_note_apply_keyboard_mode, KeyboardMode};
     use nih_plug::midi::NoteEvent;
     use crate::processors::PatternChordData;
-    
-    #[test]
-    fn test_is_black_key() {
-        // Test the is_black_key function with some example MIDI note numbers.
-        let black_keys = [1, 3, 6, 8, 10];
-        for note in black_keys {
-            println!("{}: {}", note, is_black_key(note));
-        }
-    }
-    
+
     #[test]
     fn test_count_black_keys() {
         assert_eq!(count_black_keys_from_C3(50), -4);
@@ -215,6 +205,35 @@ mod tests {
         assert_eq!((note_index, octave), (2, 0));
         let (note_index, octave) = note_to_chord_idx_octave(63, 3);
         assert_eq!((note_index, octave), (0, 1));
+    }
+
+    #[test]
+    fn test_is_black_key(){
+        assert!(!is_black_key(60)); // C3 = white
+        assert!(is_black_key(61)); // C#3 = black
+        assert!(!is_black_key(62)); // D3 = white
+        assert!(is_black_key(63)); // D#3 = black
+        assert!(!is_black_key(64)); // E3 = white
+        assert!(!is_black_key(65)); // F3 = white
+        assert!(is_black_key(66)); // F#3 = black
+        assert!(!is_black_key(67)); // G3 = white
+        assert!(is_black_key(68)); // G#3 = black
+        assert!(!is_black_key(69)); // A3 = white
+        assert!(is_black_key(70)); // A#3 = black
+        assert!(!is_black_key(71)); // B3 = white
+        assert!(!is_black_key(72)); // C4 = white
+    }
+
+    #[test]
+    fn test_raw_note_apply_keyboard_mode(){
+        assert_eq!(raw_note_apply_keyboard_mode(60, &KeyboardMode::AllKeys), Some(60));
+        assert_eq!(raw_note_apply_keyboard_mode(60, &KeyboardMode::IgnoreBlackKeys), Some(60));
+        assert_eq!(raw_note_apply_keyboard_mode(61, &KeyboardMode::AllKeys), Some(61));
+        assert_eq!(raw_note_apply_keyboard_mode(61, &KeyboardMode::IgnoreBlackKeys), None);
+        assert_eq!(raw_note_apply_keyboard_mode(62, &KeyboardMode::AllKeys), Some(62));
+        assert_eq!(raw_note_apply_keyboard_mode(62, &KeyboardMode::IgnoreBlackKeys), Some(61));
+        assert_eq!(raw_note_apply_keyboard_mode(63, &KeyboardMode::AllKeys), Some(63));
+        assert_eq!(raw_note_apply_keyboard_mode(63, &KeyboardMode::IgnoreBlackKeys), None);
     }
 
     #[test]

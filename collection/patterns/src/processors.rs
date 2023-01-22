@@ -63,8 +63,8 @@ impl ChordPatternProcessor {
                              wrap_threshold: u8, octave_range: u8, keyboard_mode: KeyboardMode) {
         // released keys
         while let Some(note_event) = self.released_pattern_keys.pop_back() {
-            if let Some(raw_note) = raw_note_apply_keyboard_mode(
-                get_note_of_event(&note_event).unwrap(), &keyboard_mode){
+            if let Some(raw_note) = get_note_of_event(&note_event)
+                                        .and_then(|note| raw_note_apply_keyboard_mode(note, &keyboard_mode)){
                 if let Some(active_note) = self.held_pattern_keys.remove(&raw_note) {
                     if let Some(modulated_event) = active_note.note_off(note_event.timing()) {
                         send_events.push(modulated_event);
@@ -92,20 +92,20 @@ impl ChordPatternProcessor {
         }
 
         // pressed keys
-        while let Some(note_event) = self.released_pattern_keys.pop_back() {
-          if let Some(raw_note) = raw_note_apply_keyboard_mode(
-                get_note_of_event(&note_event).unwrap(), &keyboard_mode) {
-              let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), raw_note, wrap_threshold, octave_range);
+        while let Some(note_event) = self.pressed_pattern_keys.pop_back() {
+            if let Some(raw_note) = get_note_of_event(&note_event)
+                                        .and_then(|note| raw_note_apply_keyboard_mode(note, &keyboard_mode)){
+                let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), raw_note, wrap_threshold, octave_range);
 
-              let active_note = PatternData {
+                let active_note = PatternData {
                   chord_data: chord_data,
                   note_data: ActiveNoteDefaultData::from_note_event(&note_event),
-              };
+                };
 
-              if let Some(modulated_event) = active_note.note_on(note_event.timing()) {
+                if let Some(modulated_event) = active_note.note_on(note_event.timing()) {
                   send_events.push(modulated_event);
-              }
-              self.held_pattern_keys.insert(raw_note, active_note);
+                }
+                self.held_pattern_keys.insert(raw_note, active_note);
           }
         }
     }
