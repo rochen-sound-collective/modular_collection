@@ -46,7 +46,7 @@ pub type HeldNotes <Index: Ord = ActiveNoteDefaultIndex, Data = ActiveNoteDefaul
 
 #[cfg(test)]
 mod tests {
-    use crate::active_note::{ActiveNoteDefaultData, ActiveNoteDefaultIndex, ActiveNoteChordIndex, HeldNotes};
+    use crate::active_note::{ActiveNoteDefaultData, ActiveNoteChordIndex, HeldNotes};
 
     #[test]
     fn test_sorting() {

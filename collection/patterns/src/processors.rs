@@ -3,7 +3,7 @@ use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
 use nih_plug::prelude::*;
 use crate::active_note::ActiveNoteDefaultData;
 
-use crate::utils::{get_note_of_event, get_chord_data, KeyboardMode, count_black_keys_from_C3, is_black_key, raw_note_apply_keyboard_mode};
+use crate::utils::{get_note_of_event, get_chord_data, KeyboardMode, raw_note_apply_keyboard_mode};
 
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Default)]
@@ -157,7 +157,7 @@ mod tests {
     use std::collections::BTreeSet;
     use nih_plug::midi::NoteEvent;
     use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
-    use crate::processors::{PatternData, ChordPatternProcessor};
+    use crate::processors::{ChordPatternProcessor};
     use crate::utils::KeyboardMode;
 
     #[test]

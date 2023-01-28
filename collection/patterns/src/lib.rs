@@ -4,12 +4,9 @@ mod utils;
 
 use crate::processors::ChordPatternProcessor;
 use nih_plug::prelude::*;
-use std::any::Any;
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
-use std::mem::swap;
-use std::sync::{Arc, Mutex};
-use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
+use std::sync::{Arc};
+use nih_plug::midi::NoteEvent;
 use crate::utils::{get_note_of_event, set_note_of_event, get_chord_data, KeyboardMode};
 
 pub struct Patterns {

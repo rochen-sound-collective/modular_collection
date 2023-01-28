@@ -1,6 +1,5 @@
 use nih_plug::midi::NoteEvent;
 use crate::processors::PatternChordData;
-use crate::utils;
 use nih_plug::prelude::*;
 
 #[derive(Enum, PartialEq)]
@@ -29,7 +28,7 @@ pub fn count_black_keys(note: u8) -> u8 {
     return (octaves * 5 + [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 5][(note.rem_euclid(12)) as usize]) as u8;
 }
 
-pub fn count_black_keys_from_C3(note: u8) -> i32 {
+pub fn count_black_keys_from_c3(note: u8) -> i32 {
   // there are 25 black keys from C0 (0) to C3 (60)
   count_black_keys(note) as i32 - 25
 }
@@ -50,14 +49,14 @@ pub fn raw_note_apply_keyboard_mode(raw_note: u8, keyboard_mode: &KeyboardMode)-
         KeyboardMode::IgnoreBlackKeys =>
           match is_black_key(raw_note) {
               true=> None,
-              false => u8::try_from(raw_note as i32 - count_black_keys_from_C3(raw_note)).ok()
+              false => u8::try_from(raw_note as i32 - count_black_keys_from_c3(raw_note)).ok()
           }
         KeyboardMode::AllKeys =>  Some(raw_note),
     }
 }
 
 pub fn get_chord_data(chord_vec: &Vec<u8>, note_value: u8, wrap_threshold: u8, octave_range: u8) -> PatternChordData {
-    let (chord_idx, octave) = utils::note_to_chord_idx_octave(note_value, wrap_threshold);
+    let (chord_idx, octave) = note_to_chord_idx_octave(note_value, wrap_threshold);
 
     //let chord_vec: Vec<u8> = self.chord.iter().cloned().collect();
 
@@ -151,38 +150,38 @@ pub fn get_voice_id_of_event(note_event: &NoteEvent) -> Option<i32> { // Check i
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::{get_channel_of_event, get_chord_data, note_to_chord_idx_octave, is_black_key, count_black_keys_from_C3, raw_note_apply_keyboard_mode, KeyboardMode};
+    use crate::utils::{get_channel_of_event, get_chord_data, note_to_chord_idx_octave, is_black_key, count_black_keys_from_c3, raw_note_apply_keyboard_mode, KeyboardMode};
     use nih_plug::midi::NoteEvent;
     use crate::processors::PatternChordData;
 
     #[test]
     fn test_count_black_keys() {
-        assert_eq!(count_black_keys_from_C3(50), -4);
-        assert_eq!(count_black_keys_from_C3(51), -3);
-        assert_eq!(count_black_keys_from_C3(52), -3);
-        assert_eq!(count_black_keys_from_C3(53), -2);
-        assert_eq!(count_black_keys_from_C3(54), -2);
-        assert_eq!(count_black_keys_from_C3(55), -1);
-        assert_eq!(count_black_keys_from_C3(56), -1);
-        assert_eq!(count_black_keys_from_C3(57), 0);
-        assert_eq!(count_black_keys_from_C3(58), 0);
-        assert_eq!(count_black_keys_from_C3(59), 0);
-        assert_eq!(count_black_keys_from_C3(60), 0);
-        assert_eq!(count_black_keys_from_C3(61), 1);
-        assert_eq!(count_black_keys_from_C3(62), 1);
-        assert_eq!(count_black_keys_from_C3(63), 2);
-        assert_eq!(count_black_keys_from_C3(64), 2);
-        assert_eq!(count_black_keys_from_C3(65), 3);
-        assert_eq!(count_black_keys_from_C3(66), 3);
-        assert_eq!(count_black_keys_from_C3(67), 4);
-        assert_eq!(count_black_keys_from_C3(68), 4);
-        assert_eq!(count_black_keys_from_C3(69), 5);
-        assert_eq!(count_black_keys_from_C3(70), 5);
-        assert_eq!(count_black_keys_from_C3(71), 5);
-        assert_eq!(count_black_keys_from_C3(72), 5);
-        assert_eq!(count_black_keys_from_C3(73), 6);
-        assert_eq!(count_black_keys_from_C3(74), 6);
-        assert_eq!(count_black_keys_from_C3(75), 7);
+        assert_eq!(count_black_keys_from_c3(50), -4);
+        assert_eq!(count_black_keys_from_c3(51), -3);
+        assert_eq!(count_black_keys_from_c3(52), -3);
+        assert_eq!(count_black_keys_from_c3(53), -2);
+        assert_eq!(count_black_keys_from_c3(54), -2);
+        assert_eq!(count_black_keys_from_c3(55), -1);
+        assert_eq!(count_black_keys_from_c3(56), -1);
+        assert_eq!(count_black_keys_from_c3(57), 0);
+        assert_eq!(count_black_keys_from_c3(58), 0);
+        assert_eq!(count_black_keys_from_c3(59), 0);
+        assert_eq!(count_black_keys_from_c3(60), 0);
+        assert_eq!(count_black_keys_from_c3(61), 1);
+        assert_eq!(count_black_keys_from_c3(62), 1);
+        assert_eq!(count_black_keys_from_c3(63), 2);
+        assert_eq!(count_black_keys_from_c3(64), 2);
+        assert_eq!(count_black_keys_from_c3(65), 3);
+        assert_eq!(count_black_keys_from_c3(66), 3);
+        assert_eq!(count_black_keys_from_c3(67), 4);
+        assert_eq!(count_black_keys_from_c3(68), 4);
+        assert_eq!(count_black_keys_from_c3(69), 5);
+        assert_eq!(count_black_keys_from_c3(70), 5);
+        assert_eq!(count_black_keys_from_c3(71), 5);
+        assert_eq!(count_black_keys_from_c3(72), 5);
+        assert_eq!(count_black_keys_from_c3(73), 6);
+        assert_eq!(count_black_keys_from_c3(74), 6);
+        assert_eq!(count_black_keys_from_c3(75), 7);
     }    
 
     #[test]
