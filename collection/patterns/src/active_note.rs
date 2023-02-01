@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap};
-use nih_plug::midi::NoteEvent;
+use nih_plug::midi::PluginNoteEvent;
 use crate::utils::{get_channel_of_event, get_note_of_event, get_velocity_of_event, get_voice_id_of_event};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -28,12 +28,12 @@ pub struct ActiveNoteDefaultData {
 }
 
 impl ActiveNoteDefaultData {
-    pub fn from_note_event(note_event: &NoteEvent)->ActiveNoteDefaultData{
+    pub fn from_note_event<P: nih_plug::prelude::Plugin>(note_event: &PluginNoteEvent<P>)->ActiveNoteDefaultData{
         ActiveNoteDefaultData{
-            note: get_note_of_event(&note_event).unwrap_or(60),
-            voice_id: get_voice_id_of_event(&note_event),
-            channel: get_channel_of_event(&note_event).unwrap_or_default(),
-            velocity: get_velocity_of_event(&note_event).unwrap_or_default(),
+            note: (get_note_of_event::<P>(&note_event)).unwrap_or(60),
+            voice_id: get_voice_id_of_event::<P>(&note_event),
+            channel: get_channel_of_event::<P>(&note_event).unwrap_or_default(),
+            velocity: get_velocity_of_event::<P>(&note_event).unwrap_or_default(),
         }
     }
 }

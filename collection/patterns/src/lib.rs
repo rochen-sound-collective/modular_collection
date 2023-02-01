@@ -11,7 +11,7 @@ use crate::utils::{get_note_of_event, set_note_of_event, get_chord_data, Keyboar
 
 pub struct Patterns {
     params: Arc<PatternsParams>,
-    processor: ChordPatternProcessor,
+    processor: ChordPatternProcessor<Patterns>,
 }
 
 #[derive(Params)]
@@ -52,7 +52,7 @@ impl PatternsParams{
 
 }
 
-impl Default for Patterns {
+impl Default for Patterns{
     fn default() -> Self {
         Self {
             params: Arc::new(PatternsParams::default()),
@@ -62,23 +62,23 @@ impl Default for Patterns {
 }
 
 impl Patterns {
-    fn get_note_event_channel(&self, note_event: &NoteEvent) -> u8 {
+    fn get_note_event_channel(&self, note_event: &PluginNoteEvent<Patterns>) -> u8 {
         match note_event {
-            NoteEvent::NoteOn { channel, .. }
-            | NoteEvent::NoteOff { channel, .. }
-            | NoteEvent::Choke { channel, .. }
-            | NoteEvent::VoiceTerminated { channel, .. }
-            | NoteEvent::PolyPressure { channel, .. }
-            | NoteEvent::PolyVolume { channel, .. }
-            | NoteEvent::PolyPan { channel, .. }
-            | NoteEvent::PolyTuning { channel, .. }
-            | NoteEvent::PolyVibrato { channel, .. }
-            | NoteEvent::PolyExpression { channel, .. }
-            | NoteEvent::PolyBrightness { channel, .. }
-            | NoteEvent::MidiChannelPressure { channel, .. }
-            | NoteEvent::MidiPitchBend { channel, .. }
-            | NoteEvent::MidiCC { channel, .. }
-            | NoteEvent::MidiProgramChange { channel, .. } => *channel,
+            PluginNoteEvent::<Patterns>::NoteOn { channel, .. }
+            | PluginNoteEvent::<Patterns>::NoteOff { channel, .. }
+            | PluginNoteEvent::<Patterns>::Choke { channel, .. }
+            | PluginNoteEvent::<Patterns>::VoiceTerminated { channel, .. }
+            | PluginNoteEvent::<Patterns>::PolyPressure { channel, .. }
+            | PluginNoteEvent::<Patterns>::PolyVolume { channel, .. }
+            | PluginNoteEvent::<Patterns>::PolyPan { channel, .. }
+            | PluginNoteEvent::<Patterns>::PolyTuning { channel, .. }
+            | PluginNoteEvent::<Patterns>::PolyVibrato { channel, .. }
+            | PluginNoteEvent::<Patterns>::PolyExpression { channel, .. }
+            | PluginNoteEvent::<Patterns>::PolyBrightness { channel, .. }
+            | PluginNoteEvent::<Patterns>::MidiChannelPressure { channel, .. }
+            | PluginNoteEvent::<Patterns>::MidiPitchBend { channel, .. }
+            | PluginNoteEvent::<Patterns>::MidiCC { channel, .. }
+            | PluginNoteEvent::<Patterns>::MidiProgramChange { channel, .. } => *channel,
             _ => 0,
         }
     }
@@ -120,6 +120,7 @@ impl Plugin for Patterns {
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
     const HARD_REALTIME_ONLY: bool = false;
+    type SysExMessage = ();
 
     type BackgroundTask = ();
 
@@ -137,7 +138,7 @@ impl Plugin for Patterns {
             let mut next_event = context.next_event();
             let mut sample_id = 999;
 
-            let mut other_events: Vec<NoteEvent> = vec![];
+            let mut other_events: Vec<PluginNoteEvent<Patterns>> = vec![];
 
             while let Some(event) = next_event {
                 if event.timing() != sample_id {
@@ -155,13 +156,13 @@ impl Plugin for Patterns {
                     sample_id = event.timing();
                 }
 
-                let note_channel = utils::get_channel_of_event(&event);
+                let note_channel = utils::get_channel_of_event::<Patterns>(&event);
 
                 if note_channel == Some((self.params.chord_channel.value() - 1) as u8) {
                     self.processor.process_chord_event(event);
                 } else {
                     match event {
-                        NoteEvent::NoteOn { .. } | NoteEvent::NoteOff { .. } => {
+                        PluginNoteEvent::<Patterns>::NoteOn { .. } | PluginNoteEvent::<Patterns>::NoteOff { .. } => {
                             self.processor.process_pattern_event(event)
                         }
                         _ => other_events.push(event),
@@ -181,10 +182,10 @@ impl Plugin for Patterns {
             }
             // TODO: Modulate other events too
             for note_event in other_events.iter() {
-                if let Some(raw_note) = get_note_of_event(&note_event) {
+                if let Some(raw_note) = get_note_of_event::<Patterns>(&note_event) {
                     let chord_data = get_chord_data(&self.processor.chord.iter().cloned().collect(), raw_note, self.get_threshold(), self.params.octave_range.value() as u8);
                     if let Some(triggered_note) = chord_data.triggered_note {
-                        context.send_event(set_note_of_event(note_event, triggered_note));
+                        context.send_event(set_note_of_event::<Patterns>(note_event, triggered_note));
                     }
                 }
             }
@@ -208,7 +209,7 @@ impl ClapPlugin for Patterns {
 
 impl Vst3Plugin for Patterns {
     const VST3_CLASS_ID: [u8; 16] = *b"modular.patterns";
-    const VST3_CATEGORIES: &'static str = "Instrument|Tools";
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Instrument, Vst3SubCategory::Tools];
 }
 
 nih_export_clap!(Patterns);
