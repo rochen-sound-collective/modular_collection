@@ -19,7 +19,7 @@ pub struct PatternData {
 }
 
 impl PatternData {
-    pub fn note_on(&self, timing: u32) -> Option<NoteEvent> {
+    pub fn note_on<P: nih_plug::prelude::Plugin>(&self, timing: u32) -> Option<PluginNoteEvent<P>> {
         if let Some(modulated_note) = self.chord_data.triggered_note {
             Some(NoteOn {
                 note: modulated_note,
@@ -31,7 +31,7 @@ impl PatternData {
         } else { None }
     }
 
-    pub fn note_off(&self, timing: u32) -> Option<NoteEvent> {
+    pub fn note_off<P: nih_plug::prelude::Plugin>(&self, timing: u32) -> Option<PluginNoteEvent<P>> {
         if let Some(modulated_note) = self.chord_data.triggered_note {
             Some(NoteOff {
                 note: modulated_note,
@@ -45,28 +45,28 @@ impl PatternData {
 }
 
 #[derive(Default)]
-pub struct ChordPatternProcessor {
-    pub pressed_pattern_keys: VecDeque<NoteEvent>,
-    pub released_pattern_keys: VecDeque<NoteEvent>,
+pub struct ChordPatternProcessor<P: nih_plug::prelude::Plugin> {
+    pub pressed_pattern_keys: VecDeque<PluginNoteEvent<P>>,
+    pub released_pattern_keys: VecDeque<PluginNoteEvent<P>>,
 
     pub held_pattern_keys: BTreeMap<u8, PatternData>,
     pub chord: BTreeSet<u8>,
 }
 
-impl ChordPatternProcessor {
+impl <P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
     /*
     for e in events {
         process_note_event(e)
     } */
 
-    fn apply_pattern_changes(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32,
+    fn apply_pattern_changes(&mut self, send_events: &mut Vec<PluginNoteEvent<P>>, timing: u32,
                              wrap_threshold: u8, octave_range: u8, keyboard_mode: KeyboardMode) {
         // released keys
         while let Some(note_event) = self.released_pattern_keys.pop_back() {
-            if let Some(raw_note) = get_note_of_event(&note_event)
+            if let Some(raw_note) = get_note_of_event::<P>(&note_event)
                                         .and_then(|note| raw_note_apply_keyboard_mode(note, &keyboard_mode)){
                 if let Some(active_note) = self.held_pattern_keys.remove(&raw_note) {
-                    if let Some(modulated_event) = active_note.note_off(note_event.timing()) {
+                    if let Some(modulated_event) = active_note.note_off::<P>(note_event.timing()) {
                         send_events.push(modulated_event);
                     }
                 }
@@ -78,14 +78,14 @@ impl ChordPatternProcessor {
             let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), *idx, wrap_threshold, octave_range);
             if e.chord_data != chord_data { // chord changed
                 // release notes if triggered
-                if let Some(modulated_event) = e.note_off(timing) {
+                if let Some(modulated_event) = e.note_off::<P>(timing) {
                     send_events.push(modulated_event);
                 }
 
                 e.chord_data = chord_data; //update chord data
 
                 // press note if triggered note is valid
-                if let Some(modulated_event) = e.note_on(timing) {
+                if let Some(modulated_event) = e.note_on::<P>(timing) {
                     send_events.push(modulated_event);
                 }
             }
@@ -93,16 +93,16 @@ impl ChordPatternProcessor {
 
         // pressed keys
         while let Some(note_event) = self.pressed_pattern_keys.pop_back() {
-            if let Some(raw_note) = get_note_of_event(&note_event)
+            if let Some(raw_note) = get_note_of_event::<P>(&note_event)
                                         .and_then(|note| raw_note_apply_keyboard_mode(note, &keyboard_mode)){
                 let chord_data = get_chord_data(&self.chord.iter().cloned().collect(), raw_note, wrap_threshold, octave_range);
 
                 let active_note = PatternData {
                   chord_data: chord_data,
-                  note_data: ActiveNoteDefaultData::from_note_event(&note_event),
+                  note_data: ActiveNoteDefaultData::from_note_event::<P>(&note_event),
                 };
 
-                if let Some(modulated_event) = active_note.note_on(note_event.timing()) {
+                if let Some(modulated_event) = active_note.note_on::<P>(note_event.timing()) {
                   send_events.push(modulated_event);
                 }
                 self.held_pattern_keys.insert(raw_note, active_note);
@@ -112,7 +112,7 @@ impl ChordPatternProcessor {
 
     //----------------------------
 
-    pub fn end_cycle(&mut self, send_events: &mut Vec<NoteEvent>, timing: u32, wrap_threshold: u8,
+    pub fn end_cycle(&mut self, send_events: &mut Vec<PluginNoteEvent<P>>, timing: u32, wrap_threshold: u8,
                      octave_range: u8, keyboard_mode: KeyboardMode) {
         self.apply_pattern_changes(send_events, timing, wrap_threshold, octave_range, keyboard_mode);
     }
@@ -120,7 +120,7 @@ impl ChordPatternProcessor {
     //----------------------------
 
     /*
-    fn process_note_event(&mut self, e: NoteEvent) {
+    fn process_note_event(&mut self, e: PluginNoteEvent) {
         if e.channel == settings.chord_channel {
             self.process_chord_event(e)
         } else {
@@ -129,7 +129,7 @@ impl ChordPatternProcessor {
     }*/
     //----------------------------
 
-    pub fn process_chord_event(&mut self, e: NoteEvent) {
+    pub fn process_chord_event(&mut self, e: PluginNoteEvent<P>) {
         match e {
             NoteOn{note, ..} => {let _ = self.chord.insert(note);},
             NoteOff{note, ..} => {let _ = self.chord.remove(&note);},
@@ -139,7 +139,7 @@ impl ChordPatternProcessor {
 
     //----------------------------
 
-    pub fn process_pattern_event(&mut self, e: NoteEvent) {
+    pub fn process_pattern_event(&mut self, e: PluginNoteEvent<P>) {
         match e {
             NoteOn{..} => self.pressed_pattern_keys.push_back(e),
             NoteOff{..} => self.released_pattern_keys.push_back(e),
@@ -155,15 +155,16 @@ impl ChordPatternProcessor {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use nih_plug::midi::NoteEvent;
+    use nih_plug::midi::PluginNoteEvent;
     use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
+    use crate::Patterns;
     use crate::processors::{ChordPatternProcessor};
     use crate::utils::KeyboardMode;
 
     #[test]
     fn test_process_chord_event() {
         // note on
-        let mut processor = ChordPatternProcessor::default();
+        let mut processor = ChordPatternProcessor::<Patterns>::default();
 
         processor.process_chord_event(NoteOn {
             note:60,
@@ -192,7 +193,7 @@ mod tests {
     #[test]
     fn test_process_pattern_event() {
         // note on
-        let mut processor = ChordPatternProcessor::default();
+        let mut processor = ChordPatternProcessor::<Patterns>::default();
 
         processor.process_pattern_event(NoteOn {
             note:60,
@@ -202,7 +203,7 @@ mod tests {
             channel: 16
         });
 
-        let pattern_vec: Vec<NoteEvent> = processor.pressed_pattern_keys.clone().into_iter().collect();
+        let pattern_vec: Vec<PluginNoteEvent::<Patterns>> = processor.pressed_pattern_keys.clone().into_iter().collect();
         assert_eq!(pattern_vec,
            [NoteOn {
             note:60,
@@ -220,7 +221,7 @@ mod tests {
             channel: 16
         });
 
-        let pattern_vec: Vec<NoteEvent> = processor.released_pattern_keys.clone().into_iter().collect();
+        let pattern_vec: Vec<PluginNoteEvent::<Patterns>> = processor.released_pattern_keys.clone().into_iter().collect();
         assert_eq!(pattern_vec,
            [NoteOff {
             note:60,
@@ -234,7 +235,7 @@ mod tests {
     #[test]
     fn test_end_cycle() {
         // note on
-        let mut processor = ChordPatternProcessor::default();
+        let mut processor = ChordPatternProcessor::<Patterns>::default();
 
         processor.chord = BTreeSet::from([72, 74, 76]);
 
