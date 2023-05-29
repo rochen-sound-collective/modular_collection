@@ -283,6 +283,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "modular_euclidian"
+version = "0.1.0"
+dependencies = [
+ "nih_plug",
+ "sets",
+ "simplelog",
+ "sorted-vec",
+]
+
+[[package]]
 name = "modular_patterns"
 version = "0.1.0"
 dependencies = [
