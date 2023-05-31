@@ -1,6 +1,10 @@
 use nih_plug::prelude::*;
 use std::sync::{Arc};
 
+mod sequence;
+
+use crate::sequence::{SeqNoteEvent, Sequence};
+
 
 #[derive(Enum, Debug, PartialEq)]
 enum StepSize {
@@ -33,37 +37,107 @@ enum StepSize {
     StepSize_1_64,
 }
 
+impl StepSize {
+    fn get_value(&self) -> f64 {
+        match self {
+            StepSize::StepSize_1_1 => 1.0/1.0,
+            StepSize::StepSize_1_2 => 1.0/2.0,
+            StepSize::StepSize_1_4 => 1.0/4.0,
+            StepSize::StepSize_1_8 => 1.0/8.0,
+            StepSize::StepSize_1_16 => 1.0/16.0,
+            StepSize::StepSize_1_32 => 1.0/32.0,
+            StepSize::StepSize_1_64 => 1.0/64.0,
+        }
+    }
+}
+
+
+#[derive(Clone, Default)]
+pub struct EuclidianRhythm{
+    rhythm: Vec<bool>,
+    sequence: Sequence,
+}
+
+#[derive(Clone)]
 pub struct Euclidian {
     params: Arc<EuclidianParams>,
-    rhythms: Vec<bool>,
+    rhythms: [EuclidianRhythm;4],
+}
+
+#[derive(Params)]
+struct VoiceParams {
+    #[id = "note_voice_"]
+    note: IntParam,
+
+    #[id = "vel_voice_"]
+    velocity: IntParam,
+
+    #[id = "num_notes_voice_"]
+    num_notes: IntParam,
+
+    #[id = "num_steps_voice_"]
+    num_steps: IntParam,
+
+    #[id = "offset_steps_voice_"]
+    offset_steps: IntParam,
+
+    #[id = "step_size_voice_"]
+    step_size: EnumParam<StepSize>,
+
+    #[id = "enabled_voice_"]
+    enabled: BoolParam,
 }
 
 #[derive(Params)]
 struct EuclidianParams {
-    #[id = "voice1_note"]
-    voice1_note: IntParam,
-
-    #[id = "voice1_vel"]
-    voice1_vel: IntParam,
-
-    #[id = "voice1_num_notes"]
-    voice1_num_notes: IntParam,
-
-    #[id = "voice1_num_steps"]
-    voice1_num_steps: IntParam,
-
-    #[id = "voice1_offset_steps"]
-    voice1_offset_steps: IntParam,
+    #[nested(array, group = "voices")]
+    pub voice_params: [VoiceParams;4],
 }
 
 impl Default for EuclidianParams {
     fn default() -> Self {
         Self {
-            voice1_note: IntParam::new("Voice 1 Note", 16, IntRange::Linear { min: 1, max: 127 }),
-            voice1_vel: IntParam::new("Voice 1 Velocity", 127, IntRange::Linear { min: 1, max: 127 }),
-            voice1_num_notes: IntParam::new("Voice 1 Number of Notes", 2, IntRange::Linear { min: 1, max: 64 }),
-            voice1_num_steps: IntParam::new("Voice 1 Number of Steps", 8, IntRange::Linear { min: 1, max: 64 }),
-            voice1_offset_steps: IntParam::new("Voice 1 Offset of Steps", 0, IntRange::Linear { min: 1, max: 64 }),
+            voice_params: [
+                VoiceParams{
+                    note: IntParam::new("Voice 1 Note", 36, IntRange::Linear { min: 1, max: 127 }),
+                    velocity: IntParam::new("Voice 1 Velocity", 127, IntRange::Linear { min: 1, max: 127 }),
+                    num_notes: IntParam::new("Voice 1 Number of Notes", 2, IntRange::Linear { min: 1, max: 64 }),
+                    num_steps: IntParam::new("Voice 1 Number of Steps", 8, IntRange::Linear { min: 1, max: 64 }),
+                    offset_steps: IntParam::new("Voice 1 Offset of Steps", 0, IntRange::Linear { min: 0, max: 64 }),
+                    step_size: EnumParam::new("Voice 1 Step Size", StepSize::StepSize_1_8),
+                    enabled: BoolParam::new("Voice 1 Enabled", true),
+                },
+
+                VoiceParams{
+                    note: IntParam::new("Voice 2 Note", 37, IntRange::Linear { min: 1, max: 127 }),
+                    velocity: IntParam::new("Voice 2 Velocity", 127, IntRange::Linear { min: 1, max: 127 }),
+                    num_notes: IntParam::new("Voice 2 Number of Notes", 2, IntRange::Linear { min: 1, max: 64 }),
+                    num_steps: IntParam::new("Voice 2 Number of Steps", 8, IntRange::Linear { min: 1, max: 64 }),
+                    offset_steps: IntParam::new("Voice 2 Offset of Steps", 0, IntRange::Linear { min: 0, max: 64 }),
+                    step_size: EnumParam::new("Voice 2 Step Size", StepSize::StepSize_1_8),
+                    enabled: BoolParam::new("Voice 2 Enabled", false),
+                },
+
+                VoiceParams{
+                    note: IntParam::new("Voice 3 Note", 38, IntRange::Linear { min: 1, max: 127 }),
+                    velocity: IntParam::new("Voice 3 Velocity", 127, IntRange::Linear { min: 1, max: 127 }),
+                    num_notes: IntParam::new("Voice 3 Number of Notes", 2, IntRange::Linear { min: 1, max: 64 }),
+                    num_steps: IntParam::new("Voice 3 Number of Steps", 8, IntRange::Linear { min: 1, max: 64 }),
+                    offset_steps: IntParam::new("Voice 3 Offset of Steps", 0, IntRange::Linear { min: 0, max: 64 }),
+                    step_size: EnumParam::new("Voice 3 Step Size", StepSize::StepSize_1_8),
+                    enabled: BoolParam::new("Voice 3 Enabled", false),
+                },
+
+                VoiceParams{
+                    note: IntParam::new("Voice 4 Note", 39, IntRange::Linear { min: 1, max: 127 }),
+                    velocity: IntParam::new("Voice 4 Velocity", 127, IntRange::Linear { min: 1, max: 127 }),
+                    num_notes: IntParam::new("Voice 4 Number of Notes", 2, IntRange::Linear { min: 1, max: 64 }),
+                    num_steps: IntParam::new("Voice 4 Number of Steps", 8, IntRange::Linear { min: 1, max: 64 }),
+                    offset_steps: IntParam::new("Voice 4 Offset of Steps", 0, IntRange::Linear { min: 0, max: 64 }),
+                    step_size: EnumParam::new("Voice 4 Step Size", StepSize::StepSize_1_8),
+                    enabled: BoolParam::new("Voice 4 Enabled", false),
+                },
+            ]
         }
     }
 }
@@ -74,47 +148,91 @@ impl Default for Euclidian {
     fn default() -> Self {
         Self {
             params: Arc::new(EuclidianParams::default()),
-            rhythms: vec![],
+            rhythms: Default::default(),
         }
     }
+}
+
+fn euclidean_rhythm(num_notes: usize, num_steps: usize, offset_steps: usize) -> Vec<bool> {
+    let mut rhythm = vec![false; num_steps];
+    let mut bucket = vec![false; num_steps];
+
+    if num_notes > 0 && num_notes <= num_steps {
+        let fill_count = num_steps / num_notes;
+        let remainder = num_steps % num_notes;
+
+        for i in 0..num_notes {
+            rhythm[i * fill_count] = true;
+            bucket[i * fill_count] = true;
+        }
+
+        let mut offset = offset_steps;
+        for _ in 0..remainder {
+            if bucket[offset] {
+                offset += 1;
+            }
+            rhythm[offset] = true;
+            bucket[offset] = true;
+            offset += 1;
+        }
+
+        rhythm.rotate_right(offset_steps);
+    }
+
+    rhythm
 }
 
 impl Euclidian {
-    fn calculate_rhythms(&mut self) {
-        fn euclidean_rhythm(num_notes: usize, num_steps: usize, offset_steps: usize) -> Vec<bool> {
-            let mut rhythm = vec![false; num_steps];
-            let mut bucket = vec![false; num_steps];
+    fn update_sequence(sequence: &mut Sequence, rhythm: &Vec<bool>, num_steps: i64, step_size: f64, tempo: f64, sample_rate: f32) {
+        let step_len = sequence.beats_to_samples(
+            step_size * 4.0,
+            tempo,
+            sample_rate
+        );
 
-            if num_notes > 0 && num_notes <= num_steps {
-                let fill_count = num_steps / num_notes;
-                let remainder = num_steps % num_notes;
+        sequence.sequence_length = step_len * num_steps;
+        sequence.note_events = vec![];
 
-                for i in 0..num_notes {
-                    rhythm[i * fill_count] = true;
-                    bucket[i * fill_count] = true;
-                }
-
-                let mut offset = offset_steps;
-                for _ in 0..remainder {
-                    if bucket[offset] {
-                        offset += 1;
-                    }
-                    rhythm[offset] = true;
-                    bucket[offset] = true;
-                    offset += 1;
-                }
-
-                rhythm.rotate_right(offset_steps);
+        for (i, b) in rhythm.iter().enumerate() {
+            if *b {
+                sequence.add_note_event(SeqNoteEvent {
+                    sample_pos: i as i64 * step_len,
+                    note_data: true,
+                });
+                sequence.add_note_event(SeqNoteEvent {
+                    sample_pos: (i + 1) as i64 * step_len,
+                    note_data: false,
+                });
             }
-
-            rhythm
         }
+    }
 
-        self.rhythms = euclidean_rhythm(self.params.voice1_num_notes.value() as usize,
-                                        self.params.voice1_num_steps.value() as usize,
-                                        self.params.voice1_offset_steps.value() as usize)
+    fn sample_sequence(context: &mut impl ProcessContext<Euclidian>, note: u8, velocity: i32, sample_position: i64, sequence: &Sequence) {
+        let wrapped_sample_position = sequence.get_wrapped_sample_position(sample_position);
+        for event in sequence.get_note_events_at_sample(wrapped_sample_position).iter() {
+            if event.note_data {
+                context.send_event(NoteEvent::NoteOn {
+                    timing: sample_position as u32,
+
+                    voice_id: None,
+                    channel: 0,
+                    note: note,
+                    velocity: velocity as f32 / 127.0,
+                });
+            } else {
+                context.send_event(NoteEvent::NoteOff {
+                    timing: sample_position as u32,
+
+                    voice_id: None,
+                    channel: 0,
+                    note: note,
+                    velocity: velocity as f32 / 127.0,
+                });
+            }
+        }
     }
 }
+
 
 impl Plugin for Euclidian {
     const NAME: &'static str = "Modular::Euclidian";
@@ -137,7 +255,7 @@ impl Plugin for Euclidian {
     };
 
     // No MIDI input needed
-    const MIDI_INPUT: MidiConfig = MidiConfig::None;
+    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
 
     const MIDI_OUTPUT: MidiConfig = MidiConfig::Basic;
 
@@ -152,6 +270,10 @@ impl Plugin for Euclidian {
         self.params.clone()
     }
 
+    fn initialize(&mut self, bus_config: &BusConfig, buffer_config: &BufferConfig, context: &mut impl InitContext<Self>) -> bool {
+        true
+    }
+
     fn process(
         &mut self,
         _buffer: &mut Buffer,
@@ -159,42 +281,32 @@ impl Plugin for Euclidian {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // pretty inefficient to calculate this on every execution
-        //self.calculate_rhythms();
 
         // Check if the transport is playing and if the time signature information is available
-        if context.transport().playing
-            //&& context.transport().time_sig_numerator.is_some()
-            //&& context.transport().time_sig_denominator.is_some()
-        {
-            // Calculate the PPQ (Pulses Per Quarter) value
-            //let ppq = context.transport().time_sig_numerator.unwrap() * context.transport().time_sig_denominator.unwrap();
+        if context.transport().playing {
+            let tempo = context.transport().tempo.unwrap_or(120.0);
+            let sample_rate = context.transport().sample_rate;
 
-            //if context.transport().pos_beats().map(|beats| beats.fract() == 0.0).unwrap_or(false) {
+            // get the step length in quarters
+            for (voice_params, mut euclidian) in self.params.voice_params.iter().zip(self.rhythms.iter_mut()){
+                if voice_params.enabled.value() {
+                    euclidian.rhythm = self::euclidean_rhythm(
+                        voice_params.num_notes.value() as usize,
+                        voice_params.num_steps.value() as usize,
+                        voice_params.offset_steps.value() as usize
+                    );
+                    Self::update_sequence(&mut euclidian.sequence, &euclidian.rhythm, voice_params.num_steps.value() as i64, voice_params.step_size.value().get_value(), tempo, sample_rate);
+                }
+            }
 
-            // Check if the current position is at the start of a bar
-            if let Some(beats) = context.transport().pos_beats() {
-                if beats.fract() == 0.0 {
-                    // Send the MIDI note event
-                    let sample_position = context.transport().pos_samples().unwrap_or(0) as u32;
-                    context.send_event(NoteEvent::NoteOn {
-                        timing: sample_position,
-                        voice_id: None,
-                        channel: 0,
-                        note: self.params.voice1_note.value() as u8,
-                        velocity: self.params.voice1_vel.value() as f32 / 127.0,
-                    });
+            let sample_position_start = context.transport().pos_samples().unwrap_or(0) as i64;
 
-                    // Calculate the sample position for the note-off event (1/8th note after the note-on event)
-                    let sample_position_note_off = sample_position + (context.transport().sample_rate * 60.0 / context.transport().tempo.unwrap_or(120.0) as f32 * 0.125) as u32;
-
-                    // Send the MIDI note-off event
-                    context.send_event(NoteEvent::NoteOff {
-                        timing: sample_position_note_off,
-                        voice_id: None,
-                        channel: 0,
-                        note: self.params.voice1_note.value() as u8,
-                        velocity: self.params.voice1_vel.value() as f32 / 127.0,
-                    });
+            for i in 0.._buffer.samples() {
+                let sample_position = sample_position_start + i as i64;
+                for (voice_params, euclidian) in self.params.voice_params.iter().zip(self.rhythms.iter()) {
+                    if voice_params.enabled.value() {
+                        Self::sample_sequence(context, voice_params.note.value() as u8, voice_params.velocity.value(), sample_position, &euclidian.sequence);
+                    }
                 }
             }
         }
@@ -220,13 +332,4 @@ impl Vst3Plugin for Euclidian {
 nih_export_clap!(Euclidian);
 nih_export_vst3!(Euclidian);
 
-/*
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
-*/
+
