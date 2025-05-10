@@ -1,69 +1,96 @@
-use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::ViziaState;
 use crate::active_note::ActiveNoteDefaultData;
 
-#[derive(Default)]
+#[derive(Lens)]
 pub struct NoteViewer {
-
+    active_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
+    chord_channel: u8,
+    pixels_per_beat: f32,
 }
 
 impl NoteViewer {
-    fn add_note(event: NoteEvent){
-
+    pub fn new(
+        cx: &mut Context,
+        active_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
+        chord_channel: u8,
+    ) -> Handle<Self> {
+        Self {
+            active_notes,
+            chord_channel,
+            pixels_per_beat: 100.0, // Default zoom level
+        }.build(cx, |cx| {
+            // Add zoom controls
+            HStack::new(cx, |cx| {
+                Button::new(cx, |cx| cx.emit(NoteViewerEvent::ZoomIn), |cx| Label::new(cx, "+"));
+                Button::new(cx, |cx| cx.emit(NoteViewerEvent::ZoomOut), |cx| Label::new(cx, "-"));
+            });
+        })
     }
 
-    fn remove_note(event: NoteEvent){
-
+    fn note_to_y(&self, note: u8) -> f32 {
+        // Map MIDI note (0-127) to vertical position (C0 at bottom)
+        let note_height = 12.0; // Height per octave
+        400.0 - (note as f32 * note_height / 12.0)
     }
 
+    fn is_black_key(note: u8) -> bool {
+        matches!(note % 12, 1 | 3 | 6 | 8 | 10)
+    }
 }
 
+pub enum NoteViewerEvent {
+    ZoomIn,
+    ZoomOut,
+}
 
 impl View for NoteViewer {
     fn element(&self) -> Option<&'static str> {
         Some("note-viewer")
     }
 
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.map(|e, _| match e {
+            NoteViewerEvent::ZoomIn => self.pixels_per_beat *= 1.2,
+            NoteViewerEvent::ZoomOut => self.pixels_per_beat /= 1.2,
+        });
+    }
+
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         let bounds = cx.bounds();
-        if bounds.w == 0.0 || bounds.h == 0.0 {
-            return;
+        let current_time = cx.transport().pos_beats() as f32;
+        let notes = self.active_notes.lock().unwrap();
+
+        // Draw piano keys background
+        for note in 0..127 {
+            let y = self.note_to_y(note);
+            let color = if Self::is_black_key(note) {
+                Color::rgb(50, 50, 50)
+            } else {
+                Color::rgb(200, 200, 200)
+            };
+            canvas.fill_rect(0.0, y, bounds.w, 12.0, color);
         }
 
-        // This spectrum buffer is written to at the end of the process function when the editor is
-        // open
-        /*let mut spectrum = self.spectrum.lock().unwrap();
-        let spectrum = spectrum.read();
-        let nyquist = self.sample_rate.load(Ordering::Relaxed) / 2.0;
+        // Draw active notes
+        for note_data in notes.iter() {
+            let start_x = note_data.start_time_beats as f32 * self.pixels_per_beat;
+            let end_x = note_data.end_time_beats.unwrap_or(current_time) * self.pixels_per_beat;
+            let width = end_x - start_x;
 
-        // This skips background and border drawing
-        let line_width = cx.style.dpi_factor as f32 * 1.5;
-        let paint = vg::Paint::color(cx.font_color().cloned().unwrap_or_default().into())
-            .with_line_width(line_width);
-        for (bin_idx, magnetude) in spectrum.iter().enumerate() {
-            // We'll match up the bin's x-coordinate with the filter frequency parameter
-            let frequency = (bin_idx as f32 / spectrum.len() as f32) * nyquist;
-            let t = self.frequency_range.normalize(frequency);
-            if t <= 0.0 || t >= 1.0 {
-                continue;
-            }
+            let color = if note_data.channel == self.chord_channel {
+                Color::rgb(100, 200, 100) // Green for chords
+            } else {
+                Color::rgb(200, 100, 100) // Red for patterns
+            };
 
-            // Scale this so that 1.0/0 dBFS magnetude is at 80% of the height, the bars begin at
-            // -80 dBFS, and that the scaling is linear
-            nih_debug_assert!(*magnetude >= 0.0);
-            let magnetude_db = nih_plug::util::gain_to_db(*magnetude);
-            let height = ((magnetude_db + 80.0) / 100.0).clamp(0.0, 1.0);
+            let y = self.note_to_y(note_data.note);
+            canvas.fill_rect(start_x, y, width, 12.0, color);
+        }
 
-            let mut path = vg::Path::new();
-            path.move_to(
-                bounds.x + (bounds.w * t),
-                bounds.y + (bounds.h * (1.0 - height)),
-            );
-            path.line_to(bounds.x + (bounds.w * t), bounds.y + bounds.h);
-
-            canvas.stroke_path(&mut path, &paint);
-        }*/
+        // Draw playhead
+        let playhead_x = current_time * self.pixels_per_beat;
+        canvas.fill_rect(playhead_x, 0.0, 2.0, bounds.h, Color::rgb(255, 255, 0));
     }
 }

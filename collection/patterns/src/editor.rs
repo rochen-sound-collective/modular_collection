@@ -1,14 +1,15 @@
-use std::collections::BTreeMap;
+use crate::active_note::ActiveNoteDefaultData;
 use nih_plug::prelude::{util, Editor};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
+use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
-use crate::active_note::ActiveNoteDefaultData;
 //use nih_plug_vizia::vizia::image::error::UnsupportedErrorKind::Color;
 
+use crate::note_viewer::NoteViewer;
 use crate::PatternsParams;
 
 const STYLE: &str = r#"
@@ -79,14 +80,14 @@ const STYLE: &str = r#"
 #[derive(Lens)]
 struct Data {
     params: Arc<PatternsParams>,
-    note_cache: BTreeMap<u8, ActiveNoteDefaultData>
+    note_cache: BTreeMap<u8, ActiveNoteDefaultData>,
 }
 
 impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::from_size(800, 600)
+    ViziaState::new(|| (800, 600))
 }
 
 pub(crate) fn create(
@@ -97,37 +98,38 @@ pub(crate) fn create(
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
 
-        cx.add_theme(STYLE);
+        cx.add_stylesheet(STYLE).expect("Failed to load stylesheet");
 
         Data {
             params: params.clone(),
-            note_cache: Default::default()
+            note_cache: Default::default(),
         }
         .build(cx);
 
         ResizeHandle::new(cx);
 
         HStack::new(cx, |cx| {
-            Element::new(cx)
-                .height(Stretch(1.0))
-                .width(Stretch(1.0));
+            Element::new(cx).height(Stretch(1.0)).width(Stretch(1.0));
+            NoteViewer::new(
+                cx,
+                editor_state.active_notes.clone(),
+                params.chord_channel.value() as u8,
+            )
+            .size(Pixels(800.0), Pixels(400.0));
             Element::new(cx)
                 .height(Stretch(1.0))
                 .width(Pixels(3.0))
                 .class("spacer");
             VStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
-                    Label::new(cx, "D")
-                        .class("label-chord-key");
+                    Label::new(cx, "D").class("label-chord-key");
 
-                    Label::new(cx, "min 7 / C")
-                        .class("label-chord-detail");
+                    Label::new(cx, "min 7 / C").class("label-chord-detail");
                 })
                 .class("chord-view");
 
                 VStack::new(cx, |cx| {
-                    Label::new(cx, "MIDI Input")
-                        .class("label-header");
+                    Label::new(cx, "MIDI Input").class("label-header");
 
                     // NOTE: VIZIA adds 1 pixel of additional height to these labels, so we'll need to
                     //       compensate for that
@@ -135,10 +137,8 @@ pub(crate) fn create(
                     ParamSlider::new(cx, Data::params, |params| &params.chord_channel);
                 });
 
-
                 VStack::new(cx, |cx| {
-                    Label::new(cx, "Octave wrapping")
-                        .class("label-header");
+                    Label::new(cx, "Octave wrapping").class("label-header");
 
                     // NOTE: VIZIA adds 1 pixel of additional height to these labels, so we'll need to
                     //       compensate for that

@@ -1,16 +1,15 @@
 mod active_note;
-mod processors;
-mod utils;
 mod editor;
 mod note_viewer;
+mod processors;
+mod utils;
 
 use crate::processors::ChordPatternProcessor;
+use crate::utils::{get_chord_data, get_note_of_event, set_note_of_event, KeyboardMode};
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
-use nih_plug::midi::NoteEvent::{NoteOn, NoteOff};
 use std::cmp::max;
-use std::sync::{Arc};
-use crate::utils::{get_note_of_event, set_note_of_event, get_chord_data};
+use std::sync::Arc;
 
 pub struct Patterns {
     params: Arc<PatternsParams>,
@@ -36,6 +35,9 @@ struct PatternsParams {
 
     #[id = "key_mode"]
     key_mode: EnumParam<KeyboardMode>,
+
+    #[id = "octave_shift"]
+    octave_shift: IntParam,
 }
 
 impl Default for PatternsParams {
@@ -51,15 +53,12 @@ impl Default for PatternsParams {
             auto_threshold: BoolParam::new("Auto Threshold", true),
             octave_range: IntParam::new("Octave Range", 12, IntRange::Linear { min: 1, max: 127 }),
             key_mode: EnumParam::new("Keyboard Mode", KeyboardMode::AllKeys),
+            octave_shift: IntParam::new("Octave Shift", 0, IntRange::Linear { min: -12, max: 12 }),
         }
     }
 }
 
-impl PatternsParams{
-
-}
-
-impl Default for Patterns{
+impl Default for Patterns {
     fn default() -> Self {
         Self {
             params: Arc::new(PatternsParams::default()),
@@ -93,8 +92,7 @@ impl Patterns {
     fn get_threshold(&self) -> u8 {
         if self.params.auto_threshold.value() {
             max(self.processor.chord.len() as u8, 1) // minimum wrap threshold of 1 to not divide by zero
-        }
-        else {
+        } else {
             self.params.wrap_threshold.value() as u8
         }
     }
@@ -108,17 +106,18 @@ impl Plugin for Patterns {
 
     const VERSION: &'static str = "0.0.1";
 
-    const DEFAULT_INPUT_CHANNELS: u32 = 0;
-    const DEFAULT_OUTPUT_CHANNELS: u32 = 0;
-
-    const DEFAULT_AUX_INPUTS: Option<AuxiliaryIOConfig> = None;
-    const DEFAULT_AUX_OUTPUTS: Option<AuxiliaryIOConfig> = None;
-    const PORT_NAMES: PortNames = PortNames {
-        main_input: None,
-        main_output: None,
-        aux_inputs: None,
-        aux_outputs: None,
-    };
+    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
+        AudioIOLayout {
+            main_input_channels: NonZeroU32::new(0),
+            main_output_channels: NonZeroU32::new(0),
+            ..AudioIOLayout::const_default()
+        },
+        AudioIOLayout {
+            main_input_channels: NonZeroU32::new(0),
+            main_output_channels: NonZeroU32::new(0),
+            ..AudioIOLayout::const_default()
+        },
+    ];
 
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
 
@@ -128,18 +127,14 @@ impl Plugin for Patterns {
 
     const HARD_REALTIME_ONLY: bool = false;
     type SysExMessage = ();
-
     type BackgroundTask = ();
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
     }
 
-    fn editor(&self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        editor::create(
-            self.params.clone(),
-            self.params.editor_state.clone()
-        )
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        editor::create(self.params.clone(), self.params.editor_state.clone())
     }
 
     fn process(
@@ -157,7 +152,13 @@ impl Plugin for Patterns {
             while let Some(event) = next_event {
                 if event.timing() != sample_id {
                     let note_events = &mut vec![];
-                    self.processor.end_cycle(note_events, sample_id, self.get_threshold(), self.params.octave_range.value() as u8, self.params.key_mode.value());
+                    self.processor.end_cycle(
+                        note_events,
+                        sample_id,
+                        self.get_threshold(),
+                        self.params.octave_range.value() as u8,
+                        self.params.key_mode.value(),
+                    );
 
                     for e in note_events {
                         context.send_event(*e);
@@ -176,7 +177,8 @@ impl Plugin for Patterns {
                     self.processor.process_chord_event(event);
                 } else {
                     match event {
-                        PluginNoteEvent::<Patterns>::NoteOn { .. } | PluginNoteEvent::<Patterns>::NoteOff { .. } => {
+                        PluginNoteEvent::<Patterns>::NoteOn { .. }
+                        | PluginNoteEvent::<Patterns>::NoteOff { .. } => {
                             self.processor.process_pattern_event(event)
                         }
                         _ => other_events.push(event),
@@ -189,7 +191,13 @@ impl Plugin for Patterns {
             // does not change after the last note.
 
             let note_events = &mut vec![];
-            self.processor.end_cycle(note_events, sample_id, self.get_threshold(), self.params.octave_range.value() as u8, self.params.key_mode.value());
+            self.processor.end_cycle(
+                note_events,
+                sample_id,
+                self.get_threshold(),
+                self.params.octave_range.value() as u8,
+                self.params.key_mode.value(),
+            );
 
             for e in note_events {
                 context.send_event(*e);
@@ -197,15 +205,21 @@ impl Plugin for Patterns {
             // TODO: Modulate other events too
             for note_event in other_events.iter() {
                 if let Some(raw_note) = get_note_of_event::<Patterns>(&note_event) {
-                    let chord_data = get_chord_data(&self.processor.chord.iter().cloned().collect(), raw_note, self.get_threshold(), self.params.octave_range.value() as u8);
+                    let chord_data = get_chord_data(
+                        &self.processor.chord.iter().cloned().collect(),
+                        raw_note,
+                        self.get_threshold(),
+                        self.params.octave_range.value() as u8,
+                        self.params.octave_shift.value() as i8,
+                    );
                     if let Some(triggered_note) = chord_data.triggered_note {
-                        context.send_event(set_note_of_event::<Patterns>(note_event, triggered_note));
+                        context
+                            .send_event(set_note_of_event::<Patterns>(note_event, triggered_note));
                     }
                 }
             }
 
             other_events.clear();
-
         }
 
         ProcessStatus::Normal
@@ -214,8 +228,7 @@ impl Plugin for Patterns {
 
 impl ClapPlugin for Patterns {
     const CLAP_ID: &'static str = "com.modular.patterns";
-    const CLAP_DESCRIPTION: Option<&'static str> =
-        Some("Pattern based arpeggiator.");
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("Pattern based arpeggiator.");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::NoteEffect, ClapFeature::Utility];
@@ -223,7 +236,8 @@ impl ClapPlugin for Patterns {
 
 impl Vst3Plugin for Patterns {
     const VST3_CLASS_ID: [u8; 16] = *b"modular.patterns";
-    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Instrument, Vst3SubCategory::Tools];
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
+        &[Vst3SubCategory::Instrument, Vst3SubCategory::Tools];
 }
 
 nih_export_clap!(Patterns);
