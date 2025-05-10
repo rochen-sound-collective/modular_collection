@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "xtask",
-    "collection/patterns"
+    "collection/patterns",
+    "collection/euclidian"
 ]
 [profile.release]
 lto = "thin"
