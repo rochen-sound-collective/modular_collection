@@ -4,6 +4,7 @@ members = [
     "collection/patterns",
     "collection/euclidian"
 ]
+resolver = "2"
 [profile.release]
 lto = "thin"
 strip = "symbols"

@@ -69,26 +69,25 @@ pub fn get_chord_data(
     };
 
     if let Some(note) = chord_vec.get(chord_idx as usize) {
-        chord_data.triggered_note = u8::try_from(*note as i8 + octave_range as i8 * octave + octave_shift).ok();
+        chord_data.triggered_note =
+            u8::try_from(*note as i8 + octave_range as i8 * (octave + octave_shift)).ok();
     };
 
     chord_data
 }
 
-pub fn get_note_of_event<P: nih_plug::prelude::Plugin>(
-    note_event: &PluginNoteEvent<P>,
-) -> Option<u8> {
+pub fn get_note_of_event<P: nih_plug::prelude::Plugin>(note_event: &NoteEvent<P>) -> Option<u8> {
     match note_event {
-        PluginNoteEvent::<P>::NoteOn { note, .. }
-        | PluginNoteEvent::<P>::NoteOff { note, .. }
-        | PluginNoteEvent::<P>::Choke { note, .. }
-        | PluginNoteEvent::<P>::PolyPressure { note, .. }
-        | PluginNoteEvent::<P>::PolyVolume { note, .. }
-        | PluginNoteEvent::<P>::PolyPan { note, .. }
-        | PluginNoteEvent::<P>::PolyTuning { note, .. }
-        | PluginNoteEvent::<P>::PolyVibrato { note, .. }
-        | PluginNoteEvent::<P>::PolyExpression { note, .. }
-        | PluginNoteEvent::<P>::PolyBrightness { note, .. } => Some(*note),
+        NoteEvent::NoteOn { note, .. }
+        | NoteEvent::NoteOff { note, .. }
+        | NoteEvent::Choke { note, .. }
+        | NoteEvent::PolyPressure { note, .. }
+        | NoteEvent::PolyVolume { note, .. }
+        | NoteEvent::PolyPan { note, .. }
+        | NoteEvent::PolyTuning { note, .. }
+        | NoteEvent::PolyVibrato { note, .. }
+        | NoteEvent::PolyExpression { note, .. }
+        | NoteEvent::PolyBrightness { note, .. } => Some(*note),
         _ => None,
     }
 }
@@ -97,29 +96,144 @@ pub fn set_note_of_event<P: nih_plug::prelude::Plugin>(
     note_event: &PluginNoteEvent<P>,
     new_note: u8,
 ) -> PluginNoteEvent<P> {
-    let mut mut_note_event = note_event.clone();
-    match mut_note_event {
-        PluginNoteEvent::<P>::NoteOn { ref mut note, .. }
-        | PluginNoteEvent::<P>::NoteOff { ref mut note, .. }
-        | PluginNoteEvent::<P>::Choke { ref mut note, .. }
-        | PluginNoteEvent::<P>::PolyPressure { ref mut note, .. }
-        | PluginNoteEvent::<P>::PolyVolume { ref mut note, .. }
-        | PluginNoteEvent::<P>::PolyPan { ref mut note, .. }
-        | PluginNoteEvent::<P>::PolyTuning { ref mut note, .. }
-        | PluginNoteEvent::<P>::PolyVibrato { ref mut note, .. }
-        | PluginNoteEvent::<P>::PolyExpression { ref mut note, .. }
-        | PluginNoteEvent::<P>::PolyBrightness { ref mut note, .. } => *note = new_note,
-        _ => (),
+    match note_event {
+        NoteEvent::NoteOn {
+            timing,
+            velocity,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::NoteOn {
+            timing: *timing,
+            note: new_note,
+            velocity: *velocity,
+            voice_id: *voice_id,
+            channel: *channel,
+        },
+        NoteEvent::NoteOff {
+            timing,
+            velocity,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::NoteOff {
+            timing: *timing,
+            note: new_note,
+            velocity: *velocity,
+            voice_id: *voice_id,
+            channel: *channel,
+        },
+        NoteEvent::Choke {
+            timing,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::Choke {
+            timing: *timing,
+            note: new_note,
+            voice_id: *voice_id,
+            channel: *channel,
+        },
+        NoteEvent::PolyPressure {
+            timing,
+            voice_id,
+            channel,
+            pressure,
+            ..
+        } => NoteEvent::PolyPressure {
+            timing: *timing,
+            note: new_note,
+            voice_id: *voice_id,
+            channel: *channel,
+            pressure: *pressure,
+        },
+        NoteEvent::PolyVolume {
+            timing,
+            voice_id,
+            channel,
+            gain,
+            ..
+        } => NoteEvent::PolyVolume {
+            timing: *timing,
+            note: new_note,
+            voice_id: *voice_id,
+            channel: *channel,
+            gain: *gain,
+        },
+        NoteEvent::PolyPan {
+            timing,
+            voice_id,
+            channel,
+            pan,
+            ..
+        } => NoteEvent::PolyPan {
+            timing: *timing,
+            note: new_note,
+            voice_id: *voice_id,
+            channel: *channel,
+            pan: *pan,
+        },
+        NoteEvent::PolyTuning {
+            timing,
+            voice_id,
+            channel,
+            tuning,
+            ..
+        } => NoteEvent::PolyTuning {
+            timing: *timing,
+            note: new_note,
+            voice_id: *voice_id,
+            channel: *channel,
+            tuning: *tuning,
+        },
+        NoteEvent::PolyVibrato {
+            timing,
+            voice_id,
+            channel,
+            vibrato,
+            ..
+        } => NoteEvent::PolyVibrato {
+            timing: *timing,
+            note: new_note,
+            voice_id: *voice_id,
+            channel: *channel,
+            vibrato: *vibrato,
+        },
+        NoteEvent::PolyExpression {
+            timing,
+            voice_id,
+            channel,
+            expression,
+            ..
+        } => NoteEvent::PolyExpression {
+            timing: *timing,
+            note: new_note,
+            voice_id: *voice_id,
+            channel: *channel,
+            expression: *expression,
+        },
+        NoteEvent::PolyBrightness {
+            timing,
+            voice_id,
+            channel,
+            brightness,
+            ..
+        } => NoteEvent::PolyBrightness {
+            timing: *timing,
+            note: new_note,
+            voice_id: *voice_id,
+            channel: *channel,
+            brightness: *brightness,
+        },
+        other => other.clone(),
     }
-    return mut_note_event;
 }
 
 pub fn get_velocity_of_event<P: nih_plug::prelude::Plugin>(
     note_event: &PluginNoteEvent<P>,
 ) -> Option<f32> {
     match note_event {
-        PluginNoteEvent::<P>::NoteOn { velocity, .. }
-        | PluginNoteEvent::<P>::NoteOff { velocity, .. } => Some(*velocity),
+        NoteEvent::NoteOn { velocity, .. } | NoteEvent::NoteOff { velocity, .. } => Some(*velocity),
         _ => None,
     }
 }
@@ -128,16 +242,16 @@ pub fn get_channel_of_event<P: nih_plug::prelude::Plugin>(
     note_event: &PluginNoteEvent<P>,
 ) -> Option<u8> {
     match note_event {
-        PluginNoteEvent::<P>::NoteOn { channel, .. }
-        | PluginNoteEvent::<P>::NoteOff { channel, .. }
-        | PluginNoteEvent::<P>::Choke { channel, .. }
-        | PluginNoteEvent::<P>::PolyPressure { channel, .. }
-        | PluginNoteEvent::<P>::PolyVolume { channel, .. }
-        | PluginNoteEvent::<P>::PolyPan { channel, .. }
-        | PluginNoteEvent::<P>::PolyTuning { channel, .. }
-        | PluginNoteEvent::<P>::PolyVibrato { channel, .. }
-        | PluginNoteEvent::<P>::PolyExpression { channel, .. }
-        | PluginNoteEvent::<P>::PolyBrightness { channel, .. } => Some(*channel),
+        NoteEvent::NoteOn { channel, .. }
+        | NoteEvent::NoteOff { channel, .. }
+        | NoteEvent::Choke { channel, .. }
+        | NoteEvent::PolyPressure { channel, .. }
+        | NoteEvent::PolyVolume { channel, .. }
+        | NoteEvent::PolyPan { channel, .. }
+        | NoteEvent::PolyTuning { channel, .. }
+        | NoteEvent::PolyVibrato { channel, .. }
+        | NoteEvent::PolyExpression { channel, .. }
+        | NoteEvent::PolyBrightness { channel, .. } => Some(*channel),
         _ => None,
     }
 }
@@ -147,16 +261,16 @@ pub fn get_voice_id_of_event<P: nih_plug::prelude::Plugin>(
 ) -> Option<i32> {
     // Check if correct events are selected
     match note_event {
-        PluginNoteEvent::<P>::NoteOn { voice_id, .. }
-        | PluginNoteEvent::<P>::NoteOff { voice_id, .. }
-        | PluginNoteEvent::<P>::Choke { voice_id, .. }
-        | PluginNoteEvent::<P>::PolyPressure { voice_id, .. }
-        | PluginNoteEvent::<P>::PolyVolume { voice_id, .. }
-        | PluginNoteEvent::<P>::PolyPan { voice_id, .. }
-        | PluginNoteEvent::<P>::PolyTuning { voice_id, .. }
-        | PluginNoteEvent::<P>::PolyVibrato { voice_id, .. }
-        | PluginNoteEvent::<P>::PolyExpression { voice_id, .. }
-        | PluginNoteEvent::<P>::PolyBrightness { voice_id, .. } => *voice_id,
+        NoteEvent::NoteOn { voice_id, .. }
+        | NoteEvent::NoteOff { voice_id, .. }
+        | NoteEvent::Choke { voice_id, .. }
+        | NoteEvent::PolyPressure { voice_id, .. }
+        | NoteEvent::PolyVolume { voice_id, .. }
+        | NoteEvent::PolyPan { voice_id, .. }
+        | NoteEvent::PolyTuning { voice_id, .. }
+        | NoteEvent::PolyVibrato { voice_id, .. }
+        | NoteEvent::PolyExpression { voice_id, .. }
+        | NoteEvent::PolyBrightness { voice_id, .. } => *voice_id,
         _ => None,
     }
 }

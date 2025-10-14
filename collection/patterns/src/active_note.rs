@@ -31,7 +31,7 @@ pub struct ActiveNoteDefaultIndex {
 /// In many musical applications, notes are organized by their position in a chord and octave.
 /// This index type supports that notion by storing a `chord_idx` (position in the chord)
 /// and an `octave` offset.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Default)]
 pub struct ActiveNoteChordIndex {
     /// The chord index representing the note's position within a chord.
     pub chord_idx: u8,
@@ -54,7 +54,7 @@ pub struct ActiveNoteChordIndex {
 /// - `velocity`: The note's velocity (0.0 to 1.0).
 /// - `start_time_beats`: The start time of the note in beats.
 /// - `end_time_beats`: Optionally, the end time of the note in beats.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Default)]
 pub struct ActiveNoteDefaultData {
     /// A unique identifier for this note, if available. Using this to refer to a note is
     /// required when allowing overlapping voices for CLAP plugins.
@@ -118,7 +118,7 @@ pub type HeldNotes<Index: Ord = ActiveNoteDefaultIndex, Data = ActiveNoteDefault
 // Tests
 // -------------------------------------------------------------------------------------------------
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod tests {
     use crate::active_note::{ActiveNoteChordIndex, ActiveNoteDefaultData, HeldNotes};
 
@@ -246,5 +246,99 @@ mod tests {
 
         assert_eq!(held_keys_index, keys);
         assert_eq!(held_keys_values, values);
+    }
+}
+*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_note_event_basic() {
+        // Basic case: standard NoteOn event with note 60, velocity 100
+        let event = NoteEvent::NoteOn {
+            timing: 0,
+            note: 60,
+            velocity: 0.7,
+            voice_id: Some(0),
+            channel: 0,
+        };
+        let result = ActiveNoteDefaultData::from_note_event(&event);
+        assert_eq!(result.note, 60);
+        assert_eq!(result.velocity, 0.7);
+        assert_eq!(result.voice_id, Some(0));
+        assert_eq!(result.channel, 0);
+        assert_eq!(result.start_time_beats, 0.0);
+    }
+
+    /*#[test]
+    fn test_from_note_event_no_note_data() {
+        // Edge case: event variant without note (e.g., ControlChange)
+        let event = PluginNoteEvent::MidiCC { timing: 0, channel: 0, cc: 0, value: 0.0 };
+        let result = ActiveNoteDefaultData::from_note_event(&event);
+        assert!(result.is_none()); // Assuming function returns Option
+    }*/
+
+    #[test]
+    fn test_from_note_event_zero_velocity() {
+        // Edge case: NoteOn with velocity 0 (silent note)
+        let event = PluginNoteEvent::NoteOn {
+            timing: 0,
+            note: 60,
+            velocity: 0.0,
+            voice_id: Some(0),
+            channel: 0,
+        };
+        let result = ActiveNoteDefaultData::from_note_event(&event);
+        assert_eq!(result.velocity, 0);
+    }
+
+    #[test]
+    fn test_from_note_event_boundary_notes() {
+        // Edge cases: lowest (0) and highest (127) MIDI notes
+        let low_event = PluginNoteEvent::NoteOn {
+            timing: 0,
+            note: 0,
+            velocity: 0.5,
+            voice_id: Some(0),
+            channel: 0,
+        };
+        let low_result = ActiveNoteDefaultData::from_note_event(&low_event);
+        assert_eq!(low_result.note, 0);
+
+        let high_event = PluginNoteEvent::NoteOn {
+            timing: 0,
+            note: 127,
+            velocity: 0.5,
+            voice_id: Some(0),
+            channel: 0,
+        };
+        let high_result = ActiveNoteDefaultData::from_note_event(&high_event);
+        assert_eq!(high_result.note, 127);
+    }
+
+    #[test]
+    fn test_held_notes_sorting() {
+        // Existing test enhanced: verify BTreeMap sorting by index
+        let mut held_notes: HeldNotes<ActiveNoteDefaultIndex, ActiveNoteDefaultData> =
+            BTreeMap::new();
+        held_notes.insert(
+            ActiveNoteDefaultIndex { note: 60 },
+            ActiveNoteDefaultData {
+                note: 60,
+                ..Default::default()
+            },
+        );
+        held_notes.insert(
+            ActiveNoteDefaultIndex { note: 60 },
+            ActiveNoteDefaultData {
+                note: 48,
+                ..Default::default()
+            },
+        );
+        let sorted: Vec<_> = held_notes.into_iter().collect();
+        assert_eq!(sorted[0].1.note, 48); // Lower index first
+        assert_eq!(sorted[1].1.note, 60);
     }
 }

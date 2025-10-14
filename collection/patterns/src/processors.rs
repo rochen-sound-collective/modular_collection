@@ -18,6 +18,7 @@ This module relies on utilities defined in the `utils` module and the `ActiveNot
 use crate::active_note::ActiveNoteDefaultData;
 use crate::utils::{get_chord_data, get_note_of_event, raw_note_apply_keyboard_mode, KeyboardMode};
 use nih_plug::midi::NoteEvent::{NoteOff, NoteOn};
+use nih_plug::midi::PluginNoteEvent;
 use nih_plug::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -56,8 +57,11 @@ impl PatternData {
     /// - `timing`: The sample-accurate timing at which the event should occur.
     ///
     /// # Returns
-    /// - `Some(PluginNoteEvent<P>)` if a triggered note is mapped, or `None` if not.
-    pub fn note_on<P: nih_plug::prelude::Plugin>(&self, timing: u32) -> Option<PluginNoteEvent<P>> {
+    /// - `Some(NoteEvent)` if a triggered note is mapped, or `None` if not.
+    pub fn note_on<P: nih_plug::prelude::Plugin>(
+        &self,
+        timing: u32,
+    ) -> Option<PluginNoteEvent<P>> {
         if let Some(modulated_note) = self.chord_data.triggered_note {
             Some(NoteOn {
                 note: modulated_note,
@@ -82,7 +86,7 @@ impl PatternData {
     /// - `timing`: The sample-accurate timing at which the event should occur.
     ///
     /// # Returns
-    /// - `Some(PluginNoteEvent<P>)` if a triggered note is mapped, or `None` if not.
+    /// - `Some(NoteEvent)` if a triggered note is mapped, or `None` if not.
     pub fn note_off<P: nih_plug::prelude::Plugin>(
         &self,
         timing: u32,
@@ -158,39 +162,33 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
         keyboard_mode: KeyboardMode,
         octave_shift: i8,
     ) {
-        // Process released keys
-        while let Some(note_event) = self.released_pattern_keys.pop_back() {
-            if let Some(raw_note) = get_note_of_event::<P>(&note_event)
-                .and_then(|note| raw_note_apply_keyboard_mode(note, &keyboard_mode))
-            {
-                if let Some(active_note) = self.held_pattern_keys.remove(&raw_note) {
-                    if let Some(modulated_event) = active_note.note_off::<P>(note_event.timing()) {
-                        send_events.push(modulated_event);
-                    }
-                }
-            }
-        }
+        self.process_released_keys(send_events, &keyboard_mode);
 
-        // Process chord changes and octave shifts for held keys
-        for (idx, e) in self.held_pattern_keys.iter_mut() {
-            let chord_data = get_chord_data(
-                &self.chord.iter().cloned().collect(),
-                *idx,
-                wrap_threshold,
-                octave_range,
-            );
-            if e.chord_data != chord_data {
-                if let Some(modulated_event) = e.note_off::<P>(timing) {
-                    send_events.push(modulated_event);
-                }
-                e.chord_data = chord_data;
-                if let Some(modulated_event) = e.note_on::<P>(timing) {
-                    send_events.push(modulated_event);
-                }
-            }
-        }
+        self.process_chord_changes(
+            send_events,
+            timing,
+            wrap_threshold,
+            octave_range,
+            octave_shift,
+        );
 
-        // Process pressed keys
+        self.process_pressed_keys(
+            send_events,
+            wrap_threshold,
+            octave_range,
+            keyboard_mode,
+            octave_shift,
+        );
+    }
+
+    fn process_pressed_keys(
+        &mut self,
+        send_events: &mut Vec<PluginNoteEvent<P>>,
+        wrap_threshold: u8,
+        octave_range: u8,
+        keyboard_mode: KeyboardMode,
+        octave_shift: i8,
+    ) {
         while let Some(note_event) = self.pressed_pattern_keys.pop_back() {
             if let Some(raw_note) = get_note_of_event::<P>(&note_event)
                 .and_then(|note| raw_note_apply_keyboard_mode(note, &keyboard_mode))
@@ -200,6 +198,7 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
                     raw_note,
                     wrap_threshold,
                     octave_range,
+                    octave_shift,
                 );
 
                 let active_note = PatternData {
@@ -211,6 +210,53 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
                     send_events.push(modulated_event);
                 }
                 self.held_pattern_keys.insert(raw_note, active_note);
+            }
+        }
+    }
+
+    fn process_released_keys(
+        &mut self,
+        send_events: &mut Vec<PluginNoteEvent<P>>,
+        keyboard_mode: &KeyboardMode,
+    ) {
+        while let Some(note_event) = self.released_pattern_keys.pop_back() {
+            if let Some(raw_note) = get_note_of_event::<P>(&note_event)
+                .and_then(|note| raw_note_apply_keyboard_mode(note, keyboard_mode))
+            {
+                if let Some(active_note) = self.held_pattern_keys.remove(&raw_note) {
+                    if let Some(modulated_event) = active_note.note_off::<P>(note_event.timing()) {
+                        send_events.push(modulated_event);
+                    }
+                }
+            }
+        }
+    }
+
+    fn process_chord_changes(
+        &mut self,
+        send_events: &mut Vec<PluginNoteEvent<P>>,
+        timing: u32,
+        wrap_threshold: u8,
+        octave_range: u8,
+        octave_shift: i8,
+    ) {
+        // Process chord changes and octave shifts for held keys
+        for (idx, e) in self.held_pattern_keys.iter_mut() {
+            let chord_data = get_chord_data(
+                &self.chord.iter().cloned().collect(),
+                *idx,
+                wrap_threshold,
+                octave_range,
+                octave_shift,
+            );
+            if e.chord_data != chord_data {
+                if let Some(modulated_event) = e.note_off::<P>(timing) {
+                    send_events.push(modulated_event);
+                }
+                e.chord_data = chord_data;
+                if let Some(modulated_event) = e.note_on::<P>(timing) {
+                    send_events.push(modulated_event);
+                }
             }
         }
     }

@@ -5,7 +5,7 @@ use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 //use nih_plug_vizia::vizia::image::error::UnsupportedErrorKind::Color;
 
@@ -81,6 +81,7 @@ const STYLE: &str = r#"
 struct Data {
     params: Arc<PatternsParams>,
     note_cache: BTreeMap<u8, ActiveNoteDefaultData>,
+    active_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
 }
 
 impl Model for Data {}
@@ -93,6 +94,7 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 pub(crate) fn create(
     params: Arc<PatternsParams>,
     editor_state: Arc<ViziaState>,
+    active_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
 ) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
@@ -103,6 +105,7 @@ pub(crate) fn create(
         Data {
             params: params.clone(),
             note_cache: Default::default(),
+            active_notes: active_notes.clone(),
         }
         .build(cx);
 
@@ -110,12 +113,9 @@ pub(crate) fn create(
 
         HStack::new(cx, |cx| {
             Element::new(cx).height(Stretch(1.0)).width(Stretch(1.0));
-            NoteViewer::new(
-                cx,
-                editor_state.active_notes.clone(),
-                params.chord_channel.value() as u8,
-            )
-            .size(Pixels(800.0), Pixels(400.0));
+            NoteViewer::new(cx, params.chord_channel.value() as u8, active_notes.clone())
+                .width(Pixels(800.0))
+                .height(Stretch(1.0));
             Element::new(cx)
                 .height(Stretch(1.0))
                 .width(Pixels(3.0))
@@ -140,6 +140,11 @@ pub(crate) fn create(
                 VStack::new(cx, |cx| {
                     Label::new(cx, "Octave wrapping").class("label-header");
 
+                    VStack::new(cx, |cx| {
+                        Label::new(cx, "Keyboard Mode").class("label-header");
+                        ParamSlider::new(cx, Data::params, |params| &params.key_mode);
+                    });
+
                     // NOTE: VIZIA adds 1 pixel of additional height to these labels, so we'll need to
                     //       compensate for that
                     Label::new(cx, "Align to chord").bottom(Pixels(-1.0));
@@ -150,6 +155,9 @@ pub(crate) fn create(
 
                     Label::new(cx, "Octave range").bottom(Pixels(-1.0));
                     ParamSlider::new(cx, Data::params, |params| &params.octave_range);
+
+                    Label::new(cx, "Octave shift").bottom(Pixels(-1.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.octave_shift);
                 });
             })
             .width(Stretch(0.3))

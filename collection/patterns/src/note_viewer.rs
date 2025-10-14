@@ -1,38 +1,33 @@
-use std::sync::{Arc, Mutex};
+use crate::active_note::ActiveNoteDefaultData;
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
-use crate::active_note::ActiveNoteDefaultData;
+use nih_plug_vizia::vizia::vg::{self, Paint, Path};
+use std::sync::{Arc, Mutex};
 
-#[derive(Lens)]
 pub struct NoteViewer {
-    active_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
     chord_channel: u8,
     pixels_per_beat: f32,
+    active_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
 }
 
 impl NoteViewer {
     pub fn new(
         cx: &mut Context,
-        active_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
         chord_channel: u8,
+        active_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
     ) -> Handle<Self> {
         Self {
-            active_notes,
             chord_channel,
-            pixels_per_beat: 100.0, // Default zoom level
-        }.build(cx, |cx| {
-            // Add zoom controls
-            HStack::new(cx, |cx| {
-                Button::new(cx, |cx| cx.emit(NoteViewerEvent::ZoomIn), |cx| Label::new(cx, "+"));
-                Button::new(cx, |cx| cx.emit(NoteViewerEvent::ZoomOut), |cx| Label::new(cx, "-"));
-            });
-        })
+            pixels_per_beat: 100.0,
+            active_notes,
+        }
+        .build(cx, |_| {})
+        .width(Pixels(800.0))
+        .height(Stretch(1.0))
     }
 
     fn note_to_y(&self, note: u8) -> f32 {
-        // Map MIDI note (0-127) to vertical position (C0 at bottom)
-        let note_height = 12.0; // Height per octave
-        400.0 - (note as f32 * note_height / 12.0)
+        (127 - note) as f32 * 12.0
     }
 
     fn is_black_key(note: u8) -> bool {
@@ -40,57 +35,42 @@ impl NoteViewer {
     }
 }
 
-pub enum NoteViewerEvent {
-    ZoomIn,
-    ZoomOut,
-}
-
 impl View for NoteViewer {
     fn element(&self) -> Option<&'static str> {
         Some("note-viewer")
     }
 
-    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
-        event.map(|e, _| match e {
-            NoteViewerEvent::ZoomIn => self.pixels_per_beat *= 1.2,
-            NoteViewerEvent::ZoomOut => self.pixels_per_beat /= 1.2,
-        });
-    }
+    fn event(&mut self, _cx: &mut EventContext, _event: &mut Event) {}
 
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         let bounds = cx.bounds();
-        let current_time = cx.transport().pos_beats() as f32;
         let notes = self.active_notes.lock().unwrap();
+        //nih_dbg!(&notes);
 
-        // Draw piano keys background
-        for note in 0..127 {
-            let y = self.note_to_y(note);
-            let color = if Self::is_black_key(note) {
-                Color::rgb(50, 50, 50)
+        // Draw piano keys, highlighting currently held notes
+        for note in 0..=127 {
+            let y = self.note_to_y(note as u8);
+            let mut path = Path::new();
+            path.rect(0.0, y, bounds.w, 12.0);
+
+            let is_pressed = notes.iter().any(|d| d.note == note as u8);
+            let fill_color = if is_pressed {
+                vg::Color::rgb(100, 200, 100)
+            } else if Self::is_black_key(note as u8) {
+                vg::Color::rgb(50, 50, 50)
             } else {
-                Color::rgb(200, 200, 200)
+                vg::Color::rgb(200, 200, 200)
             };
-            canvas.fill_rect(0.0, y, bounds.w, 12.0, color);
+            let fill_paint = Paint::color(fill_color);
+            let stroke_paint = Paint::color(vg::Color::rgb(30, 30, 30)).with_line_width(1.0);
+
+            canvas.fill_path(&path, &fill_paint);
+            canvas.stroke_path(&path, &stroke_paint);
         }
 
-        // Draw active notes
-        for note_data in notes.iter() {
-            let start_x = note_data.start_time_beats as f32 * self.pixels_per_beat;
-            let end_x = note_data.end_time_beats.unwrap_or(current_time) * self.pixels_per_beat;
-            let width = end_x - start_x;
-
-            let color = if note_data.channel == self.chord_channel {
-                Color::rgb(100, 200, 100) // Green for chords
-            } else {
-                Color::rgb(200, 100, 100) // Red for patterns
-            };
-
-            let y = self.note_to_y(note_data.note);
-            canvas.fill_rect(start_x, y, width, 12.0, color);
-        }
-
-        // Draw playhead
-        let playhead_x = current_time * self.pixels_per_beat;
-        canvas.fill_rect(playhead_x, 0.0, 2.0, bounds.h, Color::rgb(255, 255, 0));
+        // Draw a fixed playhead at left edge
+        let mut head = Path::new();
+        head.rect(0.0, 0.0, 2.0, bounds.h);
+        canvas.fill_path(&head, &Paint::color(vg::Color::rgb(255, 255, 0)));
     }
 }

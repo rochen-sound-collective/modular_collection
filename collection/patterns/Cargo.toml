@@ -13,16 +13,23 @@ license = "GPLv3"
 crate-type = ["cdylib", "lib"]
 #crate-type = ["cdylib"]
 
+[features]
+# No features enabled by default; enable `gui` to build the vizia UI
+default = []
+gui = ["dep:nih_plug_vizia"]
+
 [dependencies]
 # Remove the `assert_process_allocs` feature to allow allocations on the audio
 # thread in debug builds.
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs", "standalone"] }
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = [
+    "assert_process_allocs",
+    "standalone",
+] }
 #nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
 sets = "1.1.4"
 simplelog = "^0.12.0"
 sorted-vec = "0.8.0"
-nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git", package = "nih_plug_vizia" }
+nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git", package = "nih_plug_vizia", optional = true }
 # Uncomment the below line to disable the on-by-default VST3 feature to remove
 # the GPL compatibility requirement
 # nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", default_features = false, features = ["assert_process_allocs"] }
-

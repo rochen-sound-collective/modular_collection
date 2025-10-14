@@ -1,23 +1,29 @@
 mod active_note;
+#[cfg(feature = "gui")]
 mod editor;
+#[cfg(feature = "gui")]
 mod note_viewer;
 mod processors;
 mod utils;
 
 use crate::processors::ChordPatternProcessor;
 use crate::utils::{get_chord_data, get_note_of_event, set_note_of_event, KeyboardMode};
+use active_note::ActiveNoteDefaultData;
 use nih_plug::prelude::*;
+#[cfg(feature = "gui")]
 use nih_plug_vizia::ViziaState;
 use std::cmp::max;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub struct Patterns {
     params: Arc<PatternsParams>,
     processor: ChordPatternProcessor<Patterns>,
+    active_pattern_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
 }
 
 #[derive(Params)]
 struct PatternsParams {
+    #[cfg(feature = "gui")]
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
 
@@ -43,6 +49,7 @@ struct PatternsParams {
 impl Default for PatternsParams {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "gui")]
             editor_state: editor::default_state(),
             chord_channel: IntParam::new("Chord Channel", 16, IntRange::Linear { min: 1, max: 16 }),
             wrap_threshold: IntParam::new(
@@ -53,7 +60,7 @@ impl Default for PatternsParams {
             auto_threshold: BoolParam::new("Auto Threshold", true),
             octave_range: IntParam::new("Octave Range", 12, IntRange::Linear { min: 1, max: 127 }),
             key_mode: EnumParam::new("Keyboard Mode", KeyboardMode::AllKeys),
-            octave_shift: IntParam::new("Octave Shift", 0, IntRange::Linear { min: -12, max: 12 }),
+            octave_shift: IntParam::new("Octave Shift", 0, IntRange::Linear { min: -3, max: 3 }),
         }
     }
 }
@@ -62,33 +69,13 @@ impl Default for Patterns {
     fn default() -> Self {
         Self {
             params: Arc::new(PatternsParams::default()),
-            processor: ChordPatternProcessor::default(),
+            processor: ChordPatternProcessor::<Self>::default(),
+            active_pattern_notes: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
 
 impl Patterns {
-    fn get_note_event_channel(&self, note_event: &PluginNoteEvent<Patterns>) -> u8 {
-        match note_event {
-            PluginNoteEvent::<Patterns>::NoteOn { channel, .. }
-            | PluginNoteEvent::<Patterns>::NoteOff { channel, .. }
-            | PluginNoteEvent::<Patterns>::Choke { channel, .. }
-            | PluginNoteEvent::<Patterns>::VoiceTerminated { channel, .. }
-            | PluginNoteEvent::<Patterns>::PolyPressure { channel, .. }
-            | PluginNoteEvent::<Patterns>::PolyVolume { channel, .. }
-            | PluginNoteEvent::<Patterns>::PolyPan { channel, .. }
-            | PluginNoteEvent::<Patterns>::PolyTuning { channel, .. }
-            | PluginNoteEvent::<Patterns>::PolyVibrato { channel, .. }
-            | PluginNoteEvent::<Patterns>::PolyExpression { channel, .. }
-            | PluginNoteEvent::<Patterns>::PolyBrightness { channel, .. }
-            | PluginNoteEvent::<Patterns>::MidiChannelPressure { channel, .. }
-            | PluginNoteEvent::<Patterns>::MidiPitchBend { channel, .. }
-            | PluginNoteEvent::<Patterns>::MidiCC { channel, .. }
-            | PluginNoteEvent::<Patterns>::MidiProgramChange { channel, .. } => *channel,
-            _ => 0,
-        }
-    }
-
     fn get_threshold(&self) -> u8 {
         if self.params.auto_threshold.value() {
             max(self.processor.chord.len() as u8, 1) // minimum wrap threshold of 1 to not divide by zero
@@ -134,7 +121,18 @@ impl Plugin for Patterns {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        editor::create(self.params.clone(), self.params.editor_state.clone())
+        #[cfg(feature = "gui")]
+        {
+            return editor::create(
+                self.params.clone(),
+                self.params.editor_state.clone(),
+                self.active_pattern_notes.clone(),
+            );
+        }
+        #[cfg(not(feature = "gui"))]
+        {
+            None
+        }
     }
 
     fn process(
@@ -146,8 +144,13 @@ impl Plugin for Patterns {
         {
             let mut next_event = context.next_event();
             let mut sample_id = 999;
+            let current_beats: f32 = context
+            .transport()
+            .pos_beats()        // Option<f64>
+            .unwrap_or(0.0)     // f64
+            as f32; // f32
 
-            let mut other_events: Vec<PluginNoteEvent<Patterns>> = vec![];
+            let mut other_events: Vec<NoteEvent<()>> = Vec::new();
 
             while let Some(event) = next_event {
                 if event.timing() != sample_id {
@@ -158,37 +161,58 @@ impl Plugin for Patterns {
                         self.get_threshold(),
                         self.params.octave_range.value() as u8,
                         self.params.key_mode.value(),
+                        self.params.octave_shift.value() as i8,
                     );
 
-                    for e in note_events {
-                        context.send_event(*e);
+                    for note_event in note_events {
+                        context.send_event(note_event.clone());
                     }
                     // TODO: Modulate other events too
-                    for event in other_events.iter() {
-                        context.send_event(*event);
+                    for event in &other_events {
+                        context.send_event(event.clone());
                     }
                     other_events.clear();
                     sample_id = event.timing();
                 }
 
-                let note_channel = utils::get_channel_of_event::<Patterns>(&event);
+                let note_channel = utils::get_channel_of_event::<Self>(&event);
 
                 if note_channel == Some((self.params.chord_channel.value() - 1) as u8) {
-                    self.processor.process_chord_event(event);
+                    self.processor.process_chord_event(event.clone());
                 } else {
                     match event {
-                        PluginNoteEvent::<Patterns>::NoteOn { .. }
-                        | PluginNoteEvent::<Patterns>::NoteOff { .. } => {
-                            self.processor.process_pattern_event(event)
+                        PluginNoteEvent::<Patterns>::NoteOn { .. } => {
+                            self.processor.process_pattern_event(event.clone());
+                            // Add note to active notes
+                            let mut active_notes = self.active_pattern_notes.lock().unwrap();
+                            let mut note =
+                                ActiveNoteDefaultData::from_note_event::<Patterns>(&event);
+                            note.start_time_beats = current_beats;
+
+                            active_notes.push(note);
                         }
-                        _ => other_events.push(event),
+                        PluginNoteEvent::<Patterns>::NoteOff { note, .. } => {
+                            self.processor.process_pattern_event(event);
+                            // Set end time and remove note
+                            let mut active_notes = self.active_pattern_notes.lock().unwrap();
+                            for note_data in active_notes.iter_mut() {
+                                if note_data.note == note && note_data.end_time_beats.is_none() {
+                                    note_data.end_time_beats = Some(current_beats);
+                                    break;
+                                }
+                            }
+                            // Remove notes that have ended after a while
+                            active_notes.retain(|n| {
+                                n.end_time_beats
+                                    .map_or(true, |end| current_beats - end < 2.0)
+                            });
+                        }
+                        _ => other_events.push(event.clone()),
                     }
                 }
 
                 next_event = context.next_event();
             }
-            // process last chord change. In the above loop the last chord change will not be processed otherwise because the sample_id
-            // does not change after the last note.
 
             let note_events = &mut vec![];
             self.processor.end_cycle(
@@ -197,14 +221,15 @@ impl Plugin for Patterns {
                 self.get_threshold(),
                 self.params.octave_range.value() as u8,
                 self.params.key_mode.value(),
+                self.params.octave_shift.value() as i8,
             );
 
             for e in note_events {
-                context.send_event(*e);
+                context.send_event(e.clone());
             }
             // TODO: Modulate other events too
-            for note_event in other_events.iter() {
-                if let Some(raw_note) = get_note_of_event::<Patterns>(&note_event) {
+            for note_event in &other_events {
+                if let Some(raw_note) = get_note_of_event::<Self>(note_event) {
                     let chord_data = get_chord_data(
                         &self.processor.chord.iter().cloned().collect(),
                         raw_note,
@@ -213,8 +238,7 @@ impl Plugin for Patterns {
                         self.params.octave_shift.value() as i8,
                     );
                     if let Some(triggered_note) = chord_data.triggered_note {
-                        context
-                            .send_event(set_note_of_event::<Patterns>(note_event, triggered_note));
+                        context.send_event(set_note_of_event::<Self>(note_event, triggered_note));
                     }
                 }
             }
