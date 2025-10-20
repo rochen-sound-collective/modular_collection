@@ -391,7 +391,6 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
         send_events: &mut Vec<PluginNoteEvent<P>>,
         timing: u32,
         mix: f32,
-        mirror_cc: bool,
     ) {
         if self.last_expr_emit_sample != 0
             && timing <= self.last_expr_emit_sample + self.expr_tick_interval
@@ -443,13 +442,6 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
                         let expression_event =
                             new_expr_event::<P>(kind, timing, tn, voice_id, channel, mixed_value);
                         send_events.push(expression_event);
-                        if mirror_cc {
-                            if let Some(cc_event) = crate::utils::new_cc_from_expr::<P>(
-                                kind, timing, channel, mixed_value,
-                            ) {
-                                send_events.push(cc_event);
-                            }
-                        }
                         emitted_any = true;
                     }
                 }

@@ -67,8 +67,6 @@ struct PatternsParams {
     #[id = "expr_mix"]
     expr_mix: FloatParam,
 
-    #[id = "expr_mirror_cc"]
-    expr_mirror_cc: BoolParam,
     // Removed: expression smoothing parameter
 }
 
@@ -92,7 +90,7 @@ impl Default for PatternsParams {
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             ),
-            expr_mirror_cc: BoolParam::new("Mirror Expressions to CC", false),
+            
         }
     }
 }
@@ -232,7 +230,6 @@ impl Plugin for Patterns {
                         note_events,
                         sample_id,
                         self.params.expr_mix.value(),
-                        self.params.expr_mirror_cc.value(),
                     );
                     for note_event in note_events {
                         context.send_event(note_event.clone());
@@ -463,7 +460,6 @@ impl Plugin for Patterns {
                 note_events,
                 sample_id,
                 self.params.expr_mix.value(),
-                self.params.expr_mirror_cc.value(),
             );
             for event_to_send in note_events {
                 context.send_event(event_to_send.clone());
