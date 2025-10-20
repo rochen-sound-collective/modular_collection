@@ -70,6 +70,8 @@ pub struct ActiveNoteDefaultData {
     pub start_time_beats: f32,
     /// The optional end time of the note event in beats.
     pub end_time_beats: Option<f32>,
+    /// Pattern-side expression last values per type
+    pub expression: ExpressionState,
 }
 
 impl ActiveNoteDefaultData {
@@ -98,6 +100,44 @@ impl ActiveNoteDefaultData {
             velocity: get_velocity_of_event::<P>(&note_event).unwrap_or_default(),
             start_time_beats: 0.0,
             end_time_beats: None,
+            expression: Default::default(),
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Clone, Default)]
+pub struct ExpressionState {
+    pub pressure: Option<f32>,
+    pub volume: Option<f32>,
+    pub pan: Option<f32>,
+    pub tuning: Option<f32>,
+    pub vibrato: Option<f32>,
+    pub expression: Option<f32>,
+    pub brightness: Option<f32>,
+}
+
+impl ExpressionState {
+    pub fn value_mut(&mut self, kind: crate::ExprType) -> &mut Option<f32> {
+        match kind {
+            crate::ExprType::Pressure => &mut self.pressure,
+            crate::ExprType::Volume => &mut self.volume,
+            crate::ExprType::Pan => &mut self.pan,
+            crate::ExprType::Tuning => &mut self.tuning,
+            crate::ExprType::Vibrato => &mut self.vibrato,
+            crate::ExprType::Expression => &mut self.expression,
+            crate::ExprType::Brightness => &mut self.brightness,
+        }
+    }
+
+    pub fn get(&self, kind: crate::ExprType) -> Option<f32> {
+        match kind {
+            crate::ExprType::Pressure => self.pressure,
+            crate::ExprType::Volume => self.volume,
+            crate::ExprType::Pan => self.pan,
+            crate::ExprType::Tuning => self.tuning,
+            crate::ExprType::Vibrato => self.vibrato,
+            crate::ExprType::Expression => self.expression,
+            crate::ExprType::Brightness => self.brightness,
         }
     }
 }

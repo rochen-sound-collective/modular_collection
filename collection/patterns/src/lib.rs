@@ -7,7 +7,7 @@ mod processors;
 mod utils;
 
 use crate::processors::ChordPatternProcessor;
-use crate::utils::{get_chord_data, get_note_of_event, set_note_of_event, KeyboardMode};
+use crate::utils::{default_expr_value, new_expr_event, set_note_voice_channel_of_event, KeyboardMode};
 use active_note::ActiveNoteDefaultData;
 use nih_plug::prelude::*;
 #[cfg(feature = "gui")]
@@ -19,6 +19,25 @@ pub struct Patterns {
     params: Arc<PatternsParams>,
     processor: ChordPatternProcessor<Patterns>,
     active_pattern_notes: Arc<Mutex<Vec<ActiveNoteDefaultData>>>,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+pub enum ExprType {
+    Pressure,
+    Volume,
+    Pan,
+    Tuning,
+    Vibrato,
+    Expression,
+    Brightness,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+pub struct ExprKey {
+    pub voice_id: i64, // -1 if None
+    pub channel: u8,
+    pub note: u8,
+    pub kind: ExprType,
 }
 
 #[derive(Params)]
@@ -44,6 +63,13 @@ struct PatternsParams {
 
     #[id = "octave_shift"]
     octave_shift: IntParam,
+
+    #[id = "expr_mix"]
+    expr_mix: FloatParam,
+
+    #[id = "expr_mirror_cc"]
+    expr_mirror_cc: BoolParam,
+    // Removed: expression smoothing parameter
 }
 
 impl Default for PatternsParams {
@@ -61,6 +87,12 @@ impl Default for PatternsParams {
             octave_range: IntParam::new("Octave Range", 12, IntRange::Linear { min: 1, max: 127 }),
             key_mode: EnumParam::new("Keyboard Mode", KeyboardMode::AllKeys),
             octave_shift: IntParam::new("Octave Shift", 0, IntRange::Linear { min: -3, max: 3 }),
+            expr_mix: FloatParam::new(
+                "Expression Mix",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            ),
+            expr_mirror_cc: BoolParam::new("Mirror Expressions to CC", false),
         }
     }
 }
@@ -82,6 +114,35 @@ impl Patterns {
         } else {
             self.params.wrap_threshold.value() as u8
         }
+    }
+
+    fn mixed_expr_for_pattern(&self, pd: &crate::processors::PatternData, kind: ExprType) -> f32 {
+        let mix = self.params.expr_mix.value();
+        let base_note_opt = self
+            .processor
+            .chord
+            .iter()
+            .nth(pd.chord_idx() as usize)
+            .copied();
+        let p_opt = pd.expr_value(kind);
+        let c_opt = if let Some(base) = base_note_opt {
+            self.processor
+                .chord_expr
+                .get(&base)
+                .and_then(|st| st.get(kind))
+        } else {
+            None
+        };
+        let (p_v, c_v) = match (p_opt, c_opt) {
+            (Some(p), Some(c)) => (p, c),
+            (Some(p), None) => (p, p),
+            (None, Some(c)) => (c, c),
+            (None, None) => {
+                let d = default_expr_value(kind);
+                (d, d)
+            }
+        };
+        p_v * (1.0 - mix) + c_v * mix
     }
 }
 
@@ -106,6 +167,8 @@ impl Plugin for Patterns {
         },
     ];
 
+    // Enable basic note event IO; CCs and other messages can still be handled as PluginNoteEvent variants
+    // while ensuring note and note-expression events are passed through by the host.
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
 
     const MIDI_OUTPUT: MidiConfig = MidiConfig::MidiCCs;
@@ -150,7 +213,7 @@ impl Plugin for Patterns {
             .unwrap_or(0.0)     // f64
             as f32; // f32
 
-            let mut other_events: Vec<NoteEvent<()>> = Vec::new();
+            let mut other_events: Vec<PluginNoteEvent<Patterns>> = Vec::new();
 
             while let Some(event) = next_event {
                 if event.timing() != sample_id {
@@ -164,12 +227,15 @@ impl Plugin for Patterns {
                         self.params.octave_shift.value() as i8,
                     );
 
+                    // Periodic expression emission at this boundary
+                    self.processor.maybe_emit_expressions(
+                        note_events,
+                        sample_id,
+                        self.params.expr_mix.value(),
+                        self.params.expr_mirror_cc.value(),
+                    );
                     for note_event in note_events {
                         context.send_event(note_event.clone());
-                    }
-                    // TODO: Modulate other events too
-                    for event in &other_events {
-                        context.send_event(event.clone());
                     }
                     other_events.clear();
                     sample_id = event.timing();
@@ -178,9 +244,168 @@ impl Plugin for Patterns {
                 let note_channel = utils::get_channel_of_event::<Self>(&event);
 
                 if note_channel == Some((self.params.chord_channel.value() - 1) as u8) {
-                    self.processor.process_chord_event(event.clone());
+                    match &event {
+                        PluginNoteEvent::<Patterns>::NoteOn { .. }
+                        | PluginNoteEvent::<Patterns>::NoteOff { .. } => {
+                            self.processor.process_chord_event(event.clone());
+                        }
+                        PluginNoteEvent::<Patterns>::Choke { note, .. } => {
+                            // Immediate choke fanout
+                            let chord_note = *note;
+                            for (_raw, pd) in self.processor.held_pattern_keys.iter() {
+                                if let Some(&base) =
+                                    self.processor.chord.iter().nth(pd.chord_idx() as usize)
+                                {
+                                    if base == chord_note {
+                                        if let Some(tn) = pd.triggered_note() {
+                                            let routed = set_note_voice_channel_of_event::<Self>(
+                                                &event,
+                                                tn,
+                                                pd.voice_id(),
+                                                pd.channel(),
+                                            );
+                                            context.send_event(routed);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        PluginNoteEvent::<Patterns>::PolyVolume { .. }
+                        | PluginNoteEvent::<Patterns>::PolyPan { .. }
+                        | PluginNoteEvent::<Patterns>::PolyTuning { .. }
+                        | PluginNoteEvent::<Patterns>::PolyVibrato { .. }
+                        | PluginNoteEvent::<Patterns>::PolyExpression { .. }
+                        | PluginNoteEvent::<Patterns>::PolyBrightness { .. }
+                        | PluginNoteEvent::<Patterns>::MidiChannelPressure { .. }
+                        | PluginNoteEvent::<Patterns>::MidiCC { .. } => {
+                            self.processor.update_chord_expr_from_event(&event);
+                            // Also propagate channel events across chord as base values
+                            self.processor.update_chord_expr_from_channel_event(&event);
+                        }
+                        _ => {}
+                    }
                 } else {
                     match event {
+                        // On pattern-side PolyPressure, immediately emit both PolyPressure
+                        // (retargeted to the triggered note) and Channel Pressure for compatibility
+                        PluginNoteEvent::<Patterns>::PolyPressure { timing, .. } => {
+                            // Update expression states as usual
+                            self.processor.update_pattern_expr_from_event(
+                                &event,
+                                &self.params.key_mode.value(),
+                            );
+                            self.processor
+                                .update_pattern_expr_from_channel_event(&event);
+
+                            // Try to route this poly pressure to the currently triggered note
+                            if let Some(raw_note) = utils::get_note_of_event::<Self>(&event)
+                                .and_then(|n| {
+                                    utils::raw_note_apply_keyboard_mode(
+                                        n,
+                                        &self.params.key_mode.value(),
+                                    )
+                                })
+                            {
+                                if let Some(pd) = self.processor.held_pattern_keys.get(&raw_note) {
+                                    if let Some(tn) = pd.triggered_note() {
+                                        // Compute mixed pressure using current chord + pattern values
+                                        let mix = self.params.expr_mix.value();
+                                        let base_note_opt = self
+                                            .processor
+                                            .chord
+                                            .iter()
+                                            .nth(pd.chord_idx() as usize)
+                                            .copied();
+                                        let p_opt = pd.expr_value(crate::ExprType::Pressure);
+                                        let c_opt = if let Some(base) = base_note_opt {
+                                            self.processor
+                                                .chord_expr
+                                                .get(&base)
+                                                .and_then(|st| st.get(crate::ExprType::Pressure))
+                                        } else {
+                                            None
+                                        };
+                                        let (p_v, c_v) = match (p_opt, c_opt) {
+                                            (Some(p), Some(c)) => (p, c),
+                                            (Some(p), None) => (p, p),
+                                            (None, Some(c)) => (c, c),
+                                            (None, None) => {
+                                                let d = default_expr_value(crate::ExprType::Pressure);
+                                                (d, d)
+                                            }
+                                        };
+                                        let mixed = p_v * (1.0 - mix) + c_v * mix;
+
+                                        // Emit mixed PolyPressure retargeted to triggered note
+                                        let poly = new_expr_event::<Self>(
+                                            crate::ExprType::Pressure,
+                                            timing,
+                                            tn,
+                                            pd.voice_id(),
+                                            pd.channel(),
+                                            mixed,
+                                        );
+                                        context.send_event(poly);
+
+                                        // Also emit channel pressure on the same channel using mixed value
+                                        context.send_event(NoteEvent::MidiChannelPressure {
+                                            timing: timing,
+                                            channel: pd.channel(),
+                                            pressure: mixed,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        // Immediate mixed forwarding for other per-note expression types
+                        PluginNoteEvent::<Patterns>::PolyVolume { timing, .. }
+                        | PluginNoteEvent::<Patterns>::PolyPan { timing, .. }
+                        | PluginNoteEvent::<Patterns>::PolyTuning { timing, .. }
+                        | PluginNoteEvent::<Patterns>::PolyVibrato { timing, .. }
+                        | PluginNoteEvent::<Patterns>::PolyExpression { timing, .. }
+                        | PluginNoteEvent::<Patterns>::PolyBrightness { timing, .. } => {
+                            // Update expression states
+                            self.processor.update_pattern_expr_from_event(
+                                &event,
+                                &self.params.key_mode.value(),
+                            );
+                            self.processor
+                                .update_pattern_expr_from_channel_event(&event);
+
+                            if let Some(raw_note) = utils::get_note_of_event::<Self>(&event)
+                                .and_then(|n| {
+                                    utils::raw_note_apply_keyboard_mode(
+                                        n,
+                                        &self.params.key_mode.value(),
+                                    )
+                                })
+                            {
+                                if let Some(pd) = self.processor.held_pattern_keys.get(&raw_note) {
+                                    if let Some(tn) = pd.triggered_note() {
+                                        // Determine kind from the event variant and emit
+                                        let kind = match &event {
+                                            PluginNoteEvent::<Patterns>::PolyVolume { .. } => ExprType::Volume,
+                                            PluginNoteEvent::<Patterns>::PolyPan { .. } => ExprType::Pan,
+                                            PluginNoteEvent::<Patterns>::PolyTuning { .. } => ExprType::Tuning,
+                                            PluginNoteEvent::<Patterns>::PolyVibrato { .. } => ExprType::Vibrato,
+                                            PluginNoteEvent::<Patterns>::PolyExpression { .. } => ExprType::Expression,
+                                            PluginNoteEvent::<Patterns>::PolyBrightness { .. } => ExprType::Brightness,
+                                            _ => unreachable!(),
+                                        };
+                                        let mixed = self.mixed_expr_for_pattern(pd, kind);
+                                        let poly = new_expr_event::<Self>(
+                                            kind,
+                                            timing,
+                                            tn,
+                                            pd.voice_id(),
+                                            pd.channel(),
+                                            mixed,
+                                        );
+                                        context.send_event(poly);
+                                    }
+                                }
+                            }
+                        }
                         PluginNoteEvent::<Patterns>::NoteOn { .. } => {
                             self.processor.process_pattern_event(event.clone());
                             // Add note to active notes
@@ -207,7 +432,16 @@ impl Plugin for Patterns {
                                     .map_or(true, |end| current_beats - end < 2.0)
                             });
                         }
-                        _ => other_events.push(event.clone()),
+                        PluginNoteEvent::<Patterns>::MidiChannelPressure { .. }
+                        | PluginNoteEvent::<Patterns>::MidiCC { .. } => {
+                            self.processor.update_pattern_expr_from_event(
+                                &event,
+                                &self.params.key_mode.value(),
+                            );
+                            self.processor
+                                .update_pattern_expr_from_channel_event(&event);
+                        }
+                        _ => {}
                     }
                 }
 
@@ -224,26 +458,16 @@ impl Plugin for Patterns {
                 self.params.octave_shift.value() as i8,
             );
 
-            for e in note_events {
-                context.send_event(e.clone());
+            // Final periodic expression emission for this block and send
+            self.processor.maybe_emit_expressions(
+                note_events,
+                sample_id,
+                self.params.expr_mix.value(),
+                self.params.expr_mirror_cc.value(),
+            );
+            for event_to_send in note_events {
+                context.send_event(event_to_send.clone());
             }
-            // TODO: Modulate other events too
-            for note_event in &other_events {
-                if let Some(raw_note) = get_note_of_event::<Self>(note_event) {
-                    let chord_data = get_chord_data(
-                        &self.processor.chord.iter().cloned().collect(),
-                        raw_note,
-                        self.get_threshold(),
-                        self.params.octave_range.value() as u8,
-                        self.params.octave_shift.value() as i8,
-                    );
-                    if let Some(triggered_note) = chord_data.triggered_note {
-                        context.send_event(set_note_of_event::<Self>(note_event, triggered_note));
-                    }
-                }
-            }
-
-            other_events.clear();
         }
 
         ProcessStatus::Normal

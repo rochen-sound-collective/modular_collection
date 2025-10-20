@@ -15,10 +15,15 @@ This module relies on utilities defined in the `utils` module and the `ActiveNot
 `active_note` module.
 */
 
-use crate::active_note::ActiveNoteDefaultData;
-use crate::utils::{get_chord_data, get_note_of_event, raw_note_apply_keyboard_mode, KeyboardMode};
+use crate::active_note::{ActiveNoteDefaultData, ExpressionState};
+use crate::utils::{
+    default_expr_value, get_chord_data_from_set, get_note_of_event, new_expr_event,
+    raw_note_apply_keyboard_mode, try_get_expr_type_value, KeyboardMode,
+};
+use crate::ExprType;
 use nih_plug::midi::NoteEvent::{NoteOff, NoteOn};
 use nih_plug::midi::PluginNoteEvent;
+use nih_plug::midi::control_change as cc;
 use nih_plug::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -46,6 +51,13 @@ pub struct PatternData {
 }
 
 impl PatternData {
+    pub fn triggered_note(&self) -> Option<u8> {
+        self.chord_data.triggered_note
+    }
+
+    pub fn chord_idx(&self) -> u8 {
+        self.chord_data.chord_idx
+    }
     /// Generates a MIDI NoteOn event for this pattern note if a triggered note is available.
     ///
     /// The function uses the chord mapping (`triggered_note`) to construct a new NoteOn event.
@@ -58,10 +70,7 @@ impl PatternData {
     ///
     /// # Returns
     /// - `Some(NoteEvent)` if a triggered note is mapped, or `None` if not.
-    pub fn note_on<P: nih_plug::prelude::Plugin>(
-        &self,
-        timing: u32,
-    ) -> Option<PluginNoteEvent<P>> {
+    pub fn note_on<P: nih_plug::prelude::Plugin>(&self, timing: u32) -> Option<PluginNoteEvent<P>> {
         if let Some(modulated_note) = self.chord_data.triggered_note {
             Some(NoteOn {
                 note: modulated_note,
@@ -103,6 +112,18 @@ impl PatternData {
             None
         }
     }
+
+    pub fn voice_id(&self) -> Option<i32> {
+        self.note_data.voice_id
+    }
+
+    pub fn channel(&self) -> u8 {
+        self.note_data.channel
+    }
+
+    pub fn expr_value(&self, kind: crate::ExprType) -> Option<f32> {
+        self.note_data.expression.get(kind)
+    }
 }
 
 /// Processes MIDI chord and pattern events to transform them into modulated note events.
@@ -126,6 +147,12 @@ pub struct ChordPatternProcessor<P: nih_plug::prelude::Plugin> {
     pub held_pattern_keys: BTreeMap<u8, PatternData>,
     /// The current chord state represented as a set of active MIDI note numbers.
     pub chord: BTreeSet<u8>,
+    /// Chord-side expression smoothers keyed by base chord note
+    pub chord_expr: BTreeMap<u8, ExpressionState>,
+    /// Expression emission scheduling interval (in samples)
+    pub expr_tick_interval: u32,
+    /// Last sample time when expressions were emitted
+    pub last_expr_emit_sample: u32,
 }
 
 impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
@@ -193,8 +220,8 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
             if let Some(raw_note) = get_note_of_event::<P>(&note_event)
                 .and_then(|note| raw_note_apply_keyboard_mode(note, &keyboard_mode))
             {
-                let chord_data = get_chord_data(
-                    &self.chord.iter().cloned().collect(),
+                let chord_data = get_chord_data_from_set(
+                    &self.chord,
                     raw_note,
                     wrap_threshold,
                     octave_range,
@@ -223,8 +250,8 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
             if let Some(raw_note) = get_note_of_event::<P>(&note_event)
                 .and_then(|note| raw_note_apply_keyboard_mode(note, keyboard_mode))
             {
-                if let Some(active_note) = self.held_pattern_keys.remove(&raw_note) {
-                    if let Some(modulated_event) = active_note.note_off::<P>(note_event.timing()) {
+                if let Some(pattern_data) = self.held_pattern_keys.remove(&raw_note) {
+                    if let Some(modulated_event) = pattern_data.note_off::<P>(note_event.timing()) {
                         send_events.push(modulated_event);
                     }
                 }
@@ -241,23 +268,196 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
         octave_shift: i8,
     ) {
         // Process chord changes and octave shifts for held keys
-        for (idx, e) in self.held_pattern_keys.iter_mut() {
-            let chord_data = get_chord_data(
-                &self.chord.iter().cloned().collect(),
-                *idx,
+        for (raw_note, pattern_data) in self.held_pattern_keys.iter_mut() {
+            let chord_data = get_chord_data_from_set(
+                &self.chord,
+                *raw_note,
                 wrap_threshold,
                 octave_range,
                 octave_shift,
             );
-            if e.chord_data != chord_data {
-                if let Some(modulated_event) = e.note_off::<P>(timing) {
+            if pattern_data.chord_data != chord_data {
+                if let Some(modulated_event) = pattern_data.note_off::<P>(timing) {
                     send_events.push(modulated_event);
                 }
-                e.chord_data = chord_data;
-                if let Some(modulated_event) = e.note_on::<P>(timing) {
+                pattern_data.chord_data = chord_data;
+                if let Some(modulated_event) = pattern_data.note_on::<P>(timing) {
                     send_events.push(modulated_event);
                 }
             }
+        }
+    }
+
+    pub fn update_pattern_expr_from_event(
+        &mut self,
+        note_event: &PluginNoteEvent<P>,
+        keyboard_mode: &KeyboardMode,
+    ) {
+        if let Some((kind, value)) = try_get_expr_type_value::<P>(note_event) {
+            if let Some(raw_note) = get_note_of_event::<P>(note_event)
+                .and_then(|n| raw_note_apply_keyboard_mode(n, keyboard_mode))
+            {
+                if let Some(pattern_data) = self.held_pattern_keys.get_mut(&raw_note) {
+                    *pattern_data
+                        .note_data
+                        .expression
+                        .value_mut(kind) = Some(value);
+                }
+            }
+        }
+    }
+
+    pub fn update_chord_expr_from_event(&mut self, note_event: &PluginNoteEvent<P>) {
+        if let Some((kind, value)) = try_get_expr_type_value::<P>(note_event) {
+            if let Some(chord_note) = get_note_of_event::<P>(note_event) {
+                let entry = self
+                    .chord_expr
+                    .entry(chord_note)
+                    .or_insert_with(ExpressionState::default);
+                *entry.value_mut(kind) = Some(value);
+            }
+        }
+    }
+
+    pub fn update_pattern_expr_from_channel_event(&mut self, event: &PluginNoteEvent<P>) {
+        match event {
+            NoteEvent::MidiChannelPressure { channel, pressure, .. } => {
+                let ch = *channel;
+                let val = *pressure;
+                for (_raw, pattern_data) in self.held_pattern_keys.iter_mut() {
+                    if pattern_data.channel() == ch {
+                        *pattern_data
+                            .note_data
+                            .expression
+                            .value_mut(crate::ExprType::Pressure) = Some(val);
+                    }
+                }
+            }
+            NoteEvent::MidiCC { channel, cc, value, .. } => {
+                let ch = *channel;
+                let (kind, mapped) = match *cc {
+                    cc::MODULATION_MSB => (crate::ExprType::Vibrato, *value),
+                    cc::EXPRESSION_CONTROLLER_MSB => (crate::ExprType::Expression, *value),
+                    cc::MAIN_VOLUME_MSB => (crate::ExprType::Volume, *value),
+                    cc::PAN_MSB => (crate::ExprType::Pan, (*value) * 2.0 - 1.0),
+                    cc::SOUND_CONTROLLER_5 => (crate::ExprType::Brightness, *value),
+                    _ => return,
+                };
+                for (_raw, pattern_data) in self.held_pattern_keys.iter_mut() {
+                    if pattern_data.channel() == ch {
+                        *pattern_data.note_data.expression.value_mut(kind) = Some(mapped);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn update_chord_expr_from_channel_event(&mut self, event: &PluginNoteEvent<P>) {
+        match event {
+            NoteEvent::MidiChannelPressure { channel: _, pressure, .. } => {
+                let val = *pressure;
+                for base in self.chord.iter().copied() {
+                    let entry = self
+                        .chord_expr
+                        .entry(base)
+                        .or_insert_with(ExpressionState::default);
+                    *entry.value_mut(crate::ExprType::Pressure) = Some(val);
+                }
+            }
+            NoteEvent::MidiCC { cc, value, .. } => {
+                let (kind, mapped) = match *cc {
+                    cc::MODULATION_MSB => (crate::ExprType::Vibrato, *value),
+                    cc::EXPRESSION_CONTROLLER_MSB => (crate::ExprType::Expression, *value),
+                    cc::MAIN_VOLUME_MSB => (crate::ExprType::Volume, *value),
+                    cc::PAN_MSB => (crate::ExprType::Pan, (*value) * 2.0 - 1.0),
+                    cc::SOUND_CONTROLLER_5 => (crate::ExprType::Brightness, *value),
+                    _ => return,
+                };
+                for base in self.chord.iter().copied() {
+                    let entry = self
+                        .chord_expr
+                        .entry(base)
+                        .or_insert_with(ExpressionState::default);
+                    *entry.value_mut(kind) = Some(mapped);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn maybe_emit_expressions(
+        &mut self,
+        send_events: &mut Vec<PluginNoteEvent<P>>,
+        timing: u32,
+        mix: f32,
+        mirror_cc: bool,
+    ) {
+        if self.last_expr_emit_sample != 0
+            && timing <= self.last_expr_emit_sample + self.expr_tick_interval
+        {
+            return;
+        }
+
+        const KINDS: &[ExprType] = &[
+            ExprType::Pressure,
+            ExprType::Volume,
+            ExprType::Pan,
+            ExprType::Tuning,
+            ExprType::Vibrato,
+            ExprType::Expression,
+            ExprType::Brightness,
+        ];
+
+        let mut emitted_any = false;
+        for (_raw, pd) in self.held_pattern_keys.iter_mut() {
+            if let Some(tn) = pd.triggered_note() {
+                let voice_id = pd.voice_id();
+                let channel = pd.channel();
+                // Resolve base chord note by chord index
+                let base_note_opt = self.chord.iter().nth(pd.chord_idx() as usize).copied();
+                for &kind in KINDS {
+                    // Read last values; gracefully fall back to the other side
+                    // so the mix never collapses to zero when one side has data.
+                    let p_opt = pd.note_data.expression.get(kind);
+                    let c_opt = if let Some(base_note) = base_note_opt {
+                        self.chord_expr
+                            .get(&base_note)
+                            .and_then(|state| state.get(kind))
+                    } else {
+                        None
+                    };
+
+                    let (p_sm, c_sm) = match (p_opt, c_opt) {
+                        (Some(p), Some(c)) => (p, c),
+                        (Some(p), None) => (p, p),
+                        (None, Some(c)) => (c, c),
+                        (None, None) => {
+                            let d = default_expr_value(kind);
+                            (d, d)
+                        }
+                    };
+                    let mixed_value = p_sm * (1.0 - mix) + c_sm * mix;
+                    // Only emit if any side provided a concrete value
+                    if p_opt.is_some() || c_opt.is_some() {
+                        let expression_event =
+                            new_expr_event::<P>(kind, timing, tn, voice_id, channel, mixed_value);
+                        send_events.push(expression_event);
+                        if mirror_cc {
+                            if let Some(cc_event) = crate::utils::new_cc_from_expr::<P>(
+                                kind, timing, channel, mixed_value,
+                            ) {
+                                send_events.push(cc_event);
+                            }
+                        }
+                        emitted_any = true;
+                    }
+                }
+            }
+        }
+
+        if emitted_any {
+            self.last_expr_emit_sample = timing;
         }
     }
 

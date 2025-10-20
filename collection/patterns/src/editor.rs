@@ -159,6 +159,13 @@ pub(crate) fn create(
                     Label::new(cx, "Octave shift").bottom(Pixels(-1.0));
                     ParamSlider::new(cx, Data::params, |params| &params.octave_shift);
                 });
+
+                VStack::new(cx, |cx| {
+                    Label::new(cx, "Expression").class("label-header");
+                    Label::new(cx, "Expression mix").bottom(Pixels(-1.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.expr_mix);
+                    // Removed expression smoothing slider
+                });
             })
             .width(Stretch(0.3))
             .row_between(Pixels(0.0))

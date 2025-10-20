@@ -1,6 +1,8 @@
 use crate::processors::PatternChordData;
 use nih_plug::midi::PluginNoteEvent;
+use nih_plug::midi::control_change as cc;
 use nih_plug::prelude::*;
+use std::collections::BTreeSet;
 
 #[derive(Enum, PartialEq)]
 pub enum KeyboardMode {
@@ -76,7 +78,9 @@ pub fn get_chord_data(
     chord_data
 }
 
-pub fn get_note_of_event<P: nih_plug::prelude::Plugin>(note_event: &NoteEvent<P>) -> Option<u8> {
+pub fn get_note_of_event<P: nih_plug::prelude::Plugin>(
+    note_event: &PluginNoteEvent<P>,
+) -> Option<u8> {
     match note_event {
         NoteEvent::NoteOn { note, .. }
         | NoteEvent::NoteOff { note, .. }
@@ -90,6 +94,29 @@ pub fn get_note_of_event<P: nih_plug::prelude::Plugin>(note_event: &NoteEvent<P>
         | NoteEvent::PolyBrightness { note, .. } => Some(*note),
         _ => None,
     }
+}
+
+pub fn get_chord_data_from_set(
+    chord_set: &BTreeSet<u8>,
+    note_value: u8,
+    wrap_threshold: u8,
+    octave_range: u8,
+    octave_shift: i8,
+) -> PatternChordData {
+    let (chord_idx, octave) = note_to_chord_idx_octave(note_value, wrap_threshold);
+
+    let mut chord_data = PatternChordData {
+        chord_idx,
+        octave,
+        triggered_note: None,
+    };
+
+    if let Some(&note) = chord_set.iter().nth(chord_idx as usize) {
+        chord_data.triggered_note =
+            u8::try_from(note as i8 + octave_range as i8 * (octave + octave_shift)).ok();
+    }
+
+    chord_data
 }
 
 pub fn set_note_of_event<P: nih_plug::prelude::Plugin>(
@@ -224,6 +251,338 @@ pub fn set_note_of_event<P: nih_plug::prelude::Plugin>(
             voice_id: *voice_id,
             channel: *channel,
             brightness: *brightness,
+        },
+        other => other.clone(),
+    }
+}
+
+pub fn set_note_voice_channel_of_event<P: nih_plug::prelude::Plugin>(
+    note_event: &PluginNoteEvent<P>,
+    new_note: u8,
+    new_voice_id: Option<i32>,
+    new_channel: u8,
+) -> PluginNoteEvent<P> {
+    match note_event {
+        NoteEvent::NoteOn {
+            timing,
+            velocity,
+            ..
+        } => NoteEvent::NoteOn {
+            timing: *timing,
+            note: new_note,
+            velocity: *velocity,
+            voice_id: new_voice_id,
+            channel: new_channel,
+        },
+        NoteEvent::NoteOff {
+            timing,
+            velocity,
+            ..
+        } => NoteEvent::NoteOff {
+            timing: *timing,
+            note: new_note,
+            velocity: *velocity,
+            voice_id: new_voice_id,
+            channel: new_channel,
+        },
+        NoteEvent::Choke { timing, .. } => NoteEvent::Choke {
+            timing: *timing,
+            note: new_note,
+            voice_id: new_voice_id,
+            channel: new_channel,
+        },
+        NoteEvent::PolyPressure {
+            timing,
+            pressure,
+            ..
+        } => NoteEvent::PolyPressure {
+            timing: *timing,
+            note: new_note,
+            voice_id: new_voice_id,
+            channel: new_channel,
+            pressure: *pressure,
+        },
+        NoteEvent::PolyVolume { timing, gain, .. } => NoteEvent::PolyVolume {
+            timing: *timing,
+            note: new_note,
+            voice_id: new_voice_id,
+            channel: new_channel,
+            gain: *gain,
+        },
+        NoteEvent::PolyPan { timing, pan, .. } => NoteEvent::PolyPan {
+            timing: *timing,
+            note: new_note,
+            voice_id: new_voice_id,
+            channel: new_channel,
+            pan: *pan,
+        },
+        NoteEvent::PolyTuning { timing, tuning, .. } => NoteEvent::PolyTuning {
+            timing: *timing,
+            note: new_note,
+            voice_id: new_voice_id,
+            channel: new_channel,
+            tuning: *tuning,
+        },
+        NoteEvent::PolyVibrato { timing, vibrato, .. } => NoteEvent::PolyVibrato {
+            timing: *timing,
+            note: new_note,
+            voice_id: new_voice_id,
+            channel: new_channel,
+            vibrato: *vibrato,
+        },
+        NoteEvent::PolyExpression {
+            timing,
+            expression,
+            ..
+        } => NoteEvent::PolyExpression {
+            timing: *timing,
+            note: new_note,
+            voice_id: new_voice_id,
+            channel: new_channel,
+            expression: *expression,
+        },
+        NoteEvent::PolyBrightness {
+            timing,
+            brightness,
+            ..
+        } => NoteEvent::PolyBrightness {
+            timing: *timing,
+            note: new_note,
+            voice_id: new_voice_id,
+            channel: new_channel,
+            brightness: *brightness,
+        },
+        other => other.clone(),
+    }
+}
+
+pub fn try_get_expr_type_value<P: nih_plug::prelude::Plugin>(
+    event: &PluginNoteEvent<P>,
+) -> Option<(crate::ExprType, f32)> {
+    match event {
+        NoteEvent::PolyPressure { pressure, .. } => Some((crate::ExprType::Pressure, *pressure)),
+        NoteEvent::PolyVolume { gain, .. } => Some((crate::ExprType::Volume, *gain)),
+        NoteEvent::PolyPan { pan, .. } => Some((crate::ExprType::Pan, *pan)),
+        NoteEvent::PolyTuning { tuning, .. } => Some((crate::ExprType::Tuning, *tuning)),
+        NoteEvent::PolyVibrato { vibrato, .. } => Some((crate::ExprType::Vibrato, *vibrato)),
+        NoteEvent::PolyExpression { expression, .. } => Some((crate::ExprType::Expression, *expression)),
+        NoteEvent::PolyBrightness { brightness, .. } => Some((crate::ExprType::Brightness, *brightness)),
+        _ => None,
+    }
+}
+
+pub fn default_expr_value(kind: crate::ExprType) -> f32 {
+    match kind {
+        crate::ExprType::Volume => 1.0,
+        _ => 0.0,
+    }
+}
+
+pub fn new_expr_event<P: nih_plug::prelude::Plugin>(
+    kind: crate::ExprType,
+    timing: u32,
+    note: u8,
+    voice_id: Option<i32>,
+    channel: u8,
+    value: f32,
+) -> PluginNoteEvent<P> {
+    match kind {
+        crate::ExprType::Pressure => NoteEvent::PolyPressure {
+            timing,
+            note,
+            voice_id,
+            channel,
+            pressure: value,
+        },
+        crate::ExprType::Volume => NoteEvent::PolyVolume {
+            timing,
+            note,
+            voice_id,
+            channel,
+            gain: value,
+        },
+        crate::ExprType::Pan => NoteEvent::PolyPan {
+            timing,
+            note,
+            voice_id,
+            channel,
+            pan: value,
+        },
+        crate::ExprType::Tuning => NoteEvent::PolyTuning {
+            timing,
+            note,
+            voice_id,
+            channel,
+            tuning: value,
+        },
+        crate::ExprType::Vibrato => NoteEvent::PolyVibrato {
+            timing,
+            note,
+            voice_id,
+            channel,
+            vibrato: value,
+        },
+        crate::ExprType::Expression => NoteEvent::PolyExpression {
+            timing,
+            note,
+            voice_id,
+            channel,
+            expression: value,
+        },
+        crate::ExprType::Brightness => NoteEvent::PolyBrightness {
+            timing,
+            note,
+            voice_id,
+            channel,
+            brightness: value,
+        },
+    }
+}
+
+pub fn new_cc_from_expr<P: nih_plug::prelude::Plugin>(
+    kind: crate::ExprType,
+    timing: u32,
+    channel: u8,
+    value: f32,
+) -> Option<PluginNoteEvent<P>> {
+    match kind {
+        // Map expression to CC11
+        crate::ExprType::Expression => Some(NoteEvent::MidiCC {
+            timing,
+            channel,
+            cc: cc::EXPRESSION_CONTROLLER_MSB,
+            value,
+        }),
+        // Map volume to CC7 (gain is a ratio here)
+        crate::ExprType::Volume => Some(NoteEvent::MidiCC {
+            timing,
+            channel,
+            cc: cc::MAIN_VOLUME_MSB,
+            value,
+        }),
+        // Map pan to CC10, remap [-1,1] -> [0,1]
+        crate::ExprType::Pan => Some(NoteEvent::MidiCC {
+            timing,
+            channel,
+            cc: cc::PAN_MSB,
+            value: (value + 1.0) * 0.5,
+        }),
+        // Map vibrato to CC1 (mod wheel)
+        crate::ExprType::Vibrato => Some(NoteEvent::MidiCC {
+            timing,
+            channel,
+            cc: cc::MODULATION_MSB,
+            value,
+        }),
+        // Map pressure to channel pressure
+        crate::ExprType::Pressure => Some(NoteEvent::MidiChannelPressure { timing, channel, pressure: value }),
+        // Brightness -> CC74
+        crate::ExprType::Brightness => Some(NoteEvent::MidiCC {
+            timing,
+            channel,
+            cc: cc::SOUND_CONTROLLER_5,
+            value,
+        }),
+        // No reasonable mapping for tuning
+        crate::ExprType::Tuning => None,
+    }
+}
+
+pub fn set_expr_value<P: nih_plug::prelude::Plugin>(
+    event: &PluginNoteEvent<P>,
+    value: f32,
+) -> PluginNoteEvent<P> {
+    match event {
+        NoteEvent::PolyPressure {
+            timing,
+            note,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::PolyPressure {
+            timing: *timing,
+            note: *note,
+            voice_id: *voice_id,
+            channel: *channel,
+            pressure: value,
+        },
+        NoteEvent::PolyVolume {
+            timing,
+            note,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::PolyVolume {
+            timing: *timing,
+            note: *note,
+            voice_id: *voice_id,
+            channel: *channel,
+            gain: value,
+        },
+        NoteEvent::PolyPan {
+            timing,
+            note,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::PolyPan {
+            timing: *timing,
+            note: *note,
+            voice_id: *voice_id,
+            channel: *channel,
+            pan: value,
+        },
+        NoteEvent::PolyTuning {
+            timing,
+            note,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::PolyTuning {
+            timing: *timing,
+            note: *note,
+            voice_id: *voice_id,
+            channel: *channel,
+            tuning: value,
+        },
+        NoteEvent::PolyVibrato {
+            timing,
+            note,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::PolyVibrato {
+            timing: *timing,
+            note: *note,
+            voice_id: *voice_id,
+            channel: *channel,
+            vibrato: value,
+        },
+        NoteEvent::PolyExpression {
+            timing,
+            note,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::PolyExpression {
+            timing: *timing,
+            note: *note,
+            voice_id: *voice_id,
+            channel: *channel,
+            expression: value,
+        },
+        NoteEvent::PolyBrightness {
+            timing,
+            note,
+            voice_id,
+            channel,
+            ..
+        } => NoteEvent::PolyBrightness {
+            timing: *timing,
+            note: *note,
+            voice_id: *voice_id,
+            channel: *channel,
+            brightness: value,
         },
         other => other.clone(),
     }
