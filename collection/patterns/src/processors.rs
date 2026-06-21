@@ -153,6 +153,18 @@ pub struct ChordPatternProcessor<P: nih_plug::prelude::Plugin> {
     pub expr_tick_interval: u32,
     /// Last sample time when expressions were emitted
     pub last_expr_emit_sample: u32,
+    /// For chord-pattern mode: per pattern raw note -> currently mapped chord notes
+    pub held_pattern_chord_notes: BTreeMap<u8, Vec<u8>>,
+    /// For chord-pattern mode: active note aggregate state (refcount and origin)
+    pub active_notes: BTreeMap<u8, NoteAggregate>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoteAggregate {
+    pub count: u32,
+    pub channel: u8,
+    pub voice_id: Option<i32>,
+    pub velocity: f32,
 }
 
 impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
@@ -188,24 +200,32 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
         octave_range: u8,
         keyboard_mode: KeyboardMode,
         octave_shift: i8,
+        play_mode: crate::PlayMode,
     ) {
-        self.process_released_keys(send_events, &keyboard_mode);
-
-        self.process_chord_changes(
-            send_events,
-            timing,
-            wrap_threshold,
-            octave_range,
-            octave_shift,
-        );
-
-        self.process_pressed_keys(
-            send_events,
-            wrap_threshold,
-            octave_range,
-            keyboard_mode,
-            octave_shift,
-        );
+        match play_mode {
+            crate::PlayMode::Pattern => {
+                self.process_released_keys(send_events, &keyboard_mode);
+                self.process_chord_changes(
+                    send_events,
+                    timing,
+                    wrap_threshold,
+                    octave_range,
+                    octave_shift,
+                );
+                self.process_pressed_keys(
+                    send_events,
+                    wrap_threshold,
+                    octave_range,
+                    keyboard_mode,
+                    octave_shift,
+                );
+            }
+            crate::PlayMode::ChordPattern => {
+                self.process_released_keys_chord_pattern(send_events, &keyboard_mode, timing, wrap_threshold, octave_range, octave_shift);
+                self.process_chord_changes_chord_pattern(send_events, timing, wrap_threshold, octave_range, octave_shift);
+                self.process_pressed_keys_chord_pattern(send_events, wrap_threshold, octave_range, keyboard_mode, octave_shift, timing);
+            }
+        }
     }
 
     fn process_pressed_keys(
@@ -473,6 +493,7 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
         octave_range: u8,
         keyboard_mode: KeyboardMode,
         octave_shift: i8,
+        play_mode: crate::PlayMode,
     ) {
         self.apply_pattern_changes(
             send_events,
@@ -481,7 +502,187 @@ impl<P: nih_plug::prelude::Plugin> ChordPatternProcessor<P> {
             octave_range,
             keyboard_mode,
             octave_shift,
+            play_mode,
         );
+    }
+
+    fn compute_chord_notes_for_pattern(
+        &self,
+        raw_note: u8,
+        wrap_threshold: u8,
+        octave_range: u8,
+        octave_shift: i8,
+    ) -> Vec<u8> {
+        if self.chord.is_empty() {
+            return Vec::new();
+        }
+        let chord_vec: Vec<u8> = self.chord.iter().copied().collect();
+        let len = chord_vec.len();
+        let (idx, octave) = crate::utils::note_to_chord_idx_octave(raw_note, wrap_threshold);
+        let inv = (idx as usize) % len;
+        let mut out = Vec::with_capacity(len);
+        for (k, base) in chord_vec.iter().enumerate() {
+            let extra = if k < inv { 1 } else { 0 } as i16;
+            let delta_oct = octave as i16 + octave_shift as i16 + extra;
+            let val = *base as i16 + delta_oct * octave_range as i16;
+            if (0..=127).contains(&val) {
+                out.push(val as u8);
+            }
+        }
+        out
+    }
+
+    fn process_pressed_keys_chord_pattern(
+        &mut self,
+        send_events: &mut Vec<PluginNoteEvent<P>>,
+        wrap_threshold: u8,
+        octave_range: u8,
+        keyboard_mode: KeyboardMode,
+        octave_shift: i8,
+        timing: u32,
+    ) {
+        while let Some(note_event) = self.pressed_pattern_keys.pop_back() {
+            if let Some(raw_note) = get_note_of_event::<P>(&note_event)
+                .and_then(|n| raw_note_apply_keyboard_mode(n, &keyboard_mode))
+            {
+                // Keep note_data for expressions and channel/voice
+                let chord_data = get_chord_data_from_set(
+                    &self.chord,
+                    raw_note,
+                    wrap_threshold,
+                    octave_range,
+                    octave_shift,
+                );
+                let active_note = PatternData {
+                    chord_data,
+                    note_data: ActiveNoteDefaultData::from_note_event::<P>(&note_event),
+                };
+                self.held_pattern_keys.insert(raw_note, active_note);
+
+                let notes = self.compute_chord_notes_for_pattern(
+                    raw_note,
+                    wrap_threshold,
+                    octave_range,
+                    octave_shift,
+                );
+                self.held_pattern_chord_notes.insert(raw_note, notes.clone());
+
+                // Increment aggregate counts and emit NoteOn when transitioning 0->1
+                let origin = self.held_pattern_keys.get(&raw_note).unwrap();
+                for n in notes {
+                    let entry = self.active_notes.entry(n).or_default();
+                    if entry.count == 0 {
+                        // initialize origin from this key and emit NoteOn
+                        entry.channel = origin.channel();
+                        entry.voice_id = origin.voice_id();
+                        entry.velocity = origin.note_data.velocity;
+                        send_events.push(NoteOn {
+                            note: n,
+                            channel: origin.channel(),
+                            velocity: origin.note_data.velocity,
+                            voice_id: origin.voice_id(),
+                            timing,
+                        });
+                    }
+                    entry.count += 1;
+                }
+            }
+        }
+    }
+
+    fn process_released_keys_chord_pattern(
+        &mut self,
+        send_events: &mut Vec<PluginNoteEvent<P>>,
+        keyboard_mode: &KeyboardMode,
+        timing: u32,
+        wrap_threshold: u8,
+        octave_range: u8,
+        octave_shift: i8,
+    ) {
+        while let Some(note_event) = self.released_pattern_keys.pop_back() {
+            if let Some(raw_note) = get_note_of_event::<P>(&note_event)
+                .and_then(|n| raw_note_apply_keyboard_mode(n, keyboard_mode))
+            {
+                // Remove key data
+                self.held_pattern_keys.remove(&raw_note);
+                if let Some(notes) = self.held_pattern_chord_notes.remove(&raw_note) {
+                    for n in notes {
+                        if let Some(agg) = self.active_notes.get_mut(&n) {
+                            if agg.count > 0 {
+                                agg.count -= 1;
+                                if agg.count == 0 {
+                                    // emit NoteOff using stored origin
+                                    send_events.push(NoteOff {
+                                        note: n,
+                                        channel: agg.channel,
+                                        velocity: agg.velocity,
+                                        voice_id: agg.voice_id,
+                                        timing,
+                                    });
+                                }
+                            }
+                            if agg.count == 0 {
+                                // cleanup
+                                let _ = self.active_notes.remove(&n);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn process_chord_changes_chord_pattern(
+        &mut self,
+        send_events: &mut Vec<PluginNoteEvent<P>>,
+        timing: u32,
+        wrap_threshold: u8,
+        octave_range: u8,
+        octave_shift: i8,
+    ) {
+        // For each held key, compute new notes and diff
+        let keys: Vec<u8> = self.held_pattern_chord_notes.keys().copied().collect();
+        for raw in keys {
+            let new_notes = self.compute_chord_notes_for_pattern(raw, wrap_threshold, octave_range, octave_shift);
+            let old_notes = self.held_pattern_chord_notes.get(&raw).cloned().unwrap_or_default();
+            // Notes to add
+            for n in new_notes.iter().filter(|n| !old_notes.contains(n)) {
+                let origin = self.held_pattern_keys.get(&raw).unwrap();
+                let entry = self.active_notes.entry(*n).or_default();
+                if entry.count == 0 {
+                    entry.channel = origin.channel();
+                    entry.voice_id = origin.voice_id();
+                    entry.velocity = origin.note_data.velocity;
+                    send_events.push(NoteOn {
+                        note: *n,
+                        channel: origin.channel(),
+                        velocity: origin.note_data.velocity,
+                        voice_id: origin.voice_id(),
+                        timing,
+                    });
+                }
+                entry.count += 1;
+            }
+            // Notes to remove
+            for n in old_notes.iter().filter(|n| !new_notes.contains(n)) {
+                if let Some(agg) = self.active_notes.get_mut(n) {
+                    if agg.count > 0 {
+                        agg.count -= 1;
+                        if agg.count == 0 {
+                            send_events.push(NoteOff {
+                                note: *n,
+                                channel: agg.channel,
+                                velocity: agg.velocity,
+                                voice_id: agg.voice_id,
+                                timing,
+                            });
+                            let _ = self.active_notes.remove(n);
+                        }
+                    }
+                }
+            }
+            self.held_pattern_chord_notes.insert(raw, new_notes);
+        }
     }
 
     /// Processes a MIDI chord event to update the internal chord state.

@@ -40,6 +40,16 @@ pub struct ExprKey {
     pub kind: ExprType,
 }
 
+#[derive(Enum, Debug, PartialEq)]
+pub enum PlayMode {
+    #[id = "pattern"]
+    #[name = "Pattern"]
+    Pattern,
+    #[id = "chord_pattern"]
+    #[name = "Chord Pattern"]
+    ChordPattern,
+}
+
 #[derive(Params)]
 struct PatternsParams {
     #[cfg(feature = "gui")]
@@ -68,6 +78,8 @@ struct PatternsParams {
     expr_mix: FloatParam,
 
     // Removed: expression smoothing parameter
+    #[id = "play_mode"]
+    play_mode: EnumParam<PlayMode>,
 }
 
 impl Default for PatternsParams {
@@ -90,7 +102,7 @@ impl Default for PatternsParams {
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             ),
-            
+            play_mode: EnumParam::new("Play Mode", PlayMode::Pattern),
         }
     }
 }
@@ -223,6 +235,7 @@ impl Plugin for Patterns {
                         self.params.octave_range.value() as u8,
                         self.params.key_mode.value(),
                         self.params.octave_shift.value() as i8,
+                        self.params.play_mode.value(),
                     );
 
                     // Periodic expression emission at this boundary
@@ -453,6 +466,7 @@ impl Plugin for Patterns {
                 self.params.octave_range.value() as u8,
                 self.params.key_mode.value(),
                 self.params.octave_shift.value() as i8,
+                self.params.play_mode.value(),
             );
 
             // Final periodic expression emission for this block and send
